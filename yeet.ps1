@@ -77,10 +77,19 @@ function Get-GeneratedBranchName {
 function Invoke-AIRequest {
     param([string]$Diff, [bool]$NeedsCommitMessage)
 
-    $model = "nvidia/nemotron-3-super-120b-a12b:free"
+    $defaultModel = "nvidia/nemotron-3-super-120b-a12b:free"
+    $model = if ($env:OPENROUTER_MODEL_ID) {
+        $env:OPENROUTER_MODEL_ID
+    } elseif ($env:OPENROUTER_MODEL) {
+        $env:OPENROUTER_MODEL
+    } else {
+        $defaultModel
+    }
     $titlePrompt = "Generate a pull request title from the diff. Return only the title text, max 72 characters, no markdown, no quotes."
     $descriptionPrompt = "Generate a pull request description in markdown from the diff. Use sections: ## Summary, ## Changes (bullet list), ## Notes. Return only the description body."
     $commitPrompt = "Generate a git commit message from the diff. Return only one line in conventional commits format and max 72 characters."
+
+    Debug-Log "Using model: $model"
 
     $jobScript = {
         param($ApiKey, $Model, $Prompt, $DiffText, $MaxTokens, $RequestName)
