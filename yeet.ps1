@@ -320,12 +320,32 @@ if ($Update) {
     git status --short
     Write-Host ""
 
-    $diff = git diff --staged
+    $branchDiff = git diff "$defaultBranch...HEAD"
+    $stagedDiff = git diff --staged
     $unstagedDiff = git diff
-    Debug-Log "Staged diff length: $($diff.Length) characters"
+
+    Debug-Log "Branch diff vs '$defaultBranch' length: $($branchDiff.Length) characters"
+    Debug-Log "Staged diff length: $($stagedDiff.Length) characters"
     Debug-Log "Unstaged diff length: $($unstagedDiff.Length) characters"
-    $combinedDiff = if ($diff) { $diff + "`n" + $unstagedDiff } else { $unstagedDiff }
-    Debug-Log "Combined diff length: $($combinedDiff.Length) characters"
+
+    $diffParts = @()
+    if ($branchDiff) {
+        $diffParts += "=== Existing branch changes vs $defaultBranch ===`n$branchDiff"
+    }
+    if ($stagedDiff) {
+        $diffParts += "=== Newly staged changes ===`n$stagedDiff"
+    }
+    if ($unstagedDiff) {
+        $diffParts += "=== Newly unstaged changes ===`n$unstagedDiff"
+    }
+
+    $combinedDiff = $diffParts -join "`n`n"
+    Debug-Log "Combined update diff length: $($combinedDiff.Length) characters"
+
+    if (-not $combinedDiff) {
+        Write-Error "No diff content found to generate update details."
+        exit 1
+    }
 
     Write-Host "Generating updated commit message and PR details with AI..." -ForegroundColor Cyan
     $aiResult = Invoke-AIRequest -Diff $combinedDiff -NeedsCommitMessage $true
