@@ -205,11 +205,10 @@ Rules:
 
     for ($attempt = 1; $attempt -le 3; $attempt++) {
         $attempts = $attempt
-        $spinnerChars = @('|', '/', '-', '\')
-        $spinnerIndex = 0
 
-        try {
-            $response = Invoke-RestMethod -Uri "https://openrouter.ai/api/v1/chat/completions" `
+        $loadingJob = Start-Job -ScriptBlock {
+            param($apiKey, $model, $systemPrompt, $requestInput, $maxTokens)
+            Invoke-RestMethod -Uri "https://openrouter.ai/api/v1/chat/completions" `
                 -Method POST `
                 -Headers @{
                     "Authorization" = "Bearer $apiKey"
@@ -224,7 +223,29 @@ Rules:
                     max_tokens = $maxTokens
                     reasoning = @{ enabled = $false }
                 } | ConvertTo-Json -Depth 10 -Compress)
+        } -ArgumentList $apiKey, $model, $systemPrompt, $requestInput, $maxTokens
 
+        $spinnerChars = @('⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏')
+        $startTime = Get-Date
+
+        while ($loadingJob.State -eq 'Running') {
+            $elapsed = ((Get-Date) - $startTime).TotalSeconds
+            $spinner = $spinnerChars[[int]($elapsed * 30) % $spinnerChars.Count]
+            Write-Host "`r$spinner Generating details..." -NoNewline -ForegroundColor Cyan
+            Start-Sleep -Milliseconds 33
+        }
+
+        Write-Host "`r" + (" " * 60) + "`r" -NoNewline
+
+        try {
+            $response = Receive-Job -Job $loadingJob -ErrorAction Stop | Select-Object -First 1
+        } finally {
+            Remove-Job -Job $loadingJob -Force -ErrorAction SilentlyContinue
+        }
+
+        $loadingJob = $null
+
+        try {
             $message = $response.choices[0].message
             $output = ""
 
