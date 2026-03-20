@@ -1,5 +1,4 @@
 param(
-    [string]$BranchPrefix = "feat",
     [switch]$DebugMode,
     [Alias("m")]
     [switch]$Merge,
@@ -13,10 +12,9 @@ function Show-Help {
     Write-Host ""
     Write-Host "yeet - Git PR Creator CLI" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "Usage: yeet [-BranchPrefix <prefix>] [-DebugMode] [-Merge] [-Help]" -ForegroundColor White
+    Write-Host "Usage: yeet [-DebugMode] [-Merge] [-Help]" -ForegroundColor White
     Write-Host ""
     Write-Host "Options:" -ForegroundColor Yellow
-    Write-Host "  -BranchPrefix <prefix>  Branch prefix for new branches (default: 'feat')" -ForegroundColor White
     Write-Host "  -DebugMode, -D          Enable debug output" -ForegroundColor White
     Write-Host "  -Merge, -m              Merge an existing PR to base branch" -ForegroundColor White
     Write-Host "  -Help, -h               Show this help message" -ForegroundColor White
@@ -216,16 +214,8 @@ if ($hasUncommittedChanges) {
     Debug-Log "PR title: $title"
     Debug-Log "PR description: $description"
 
-    $branchName = $title -replace '\s+', '-' -replace '[^a-zA-Z0-9\-]', ''
-    $branchName = "$BranchPrefix/$branchName".ToLower()
+    $branchName = ($title -replace '\s+', '-' -replace '[^a-zA-Z0-9\-]', '').ToLower()
     Debug-Log "Branch name: $branchName"
-
-    Write-Host "Creating branch: $branchName" -ForegroundColor Green
-    git checkout -b $branchName
-
-    Write-Host "Committing changes..." -ForegroundColor Green
-    git add .
-    git commit -m $commitMessage
 } else {
     Write-Host "No uncommitted changes." -ForegroundColor Yellow
     Write-Host "Current branch: $currentBranch" -ForegroundColor Cyan
@@ -296,6 +286,15 @@ if ($key.VirtualKeyCode -eq 27) {
 Write-Host ""
 Write-Host "Creating PR..." -ForegroundColor Green
 Debug-Log "Creating PR with title: '$title' on base: $defaultBranch"
+
+if ($hasUncommittedChanges) {
+    Write-Host "Creating branch: $branchName" -ForegroundColor Green
+    git checkout -b $branchName
+
+    Write-Host "Committing changes..." -ForegroundColor Green
+    git add .
+    git commit -m $commitMessage
+}
 
 Write-Host "Pushing branch to remote..." -ForegroundColor Green
 git push -u origin $branchName
