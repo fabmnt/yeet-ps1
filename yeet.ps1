@@ -85,6 +85,55 @@ function Get-GeneratedBranchName {
     return $branchName
 }
 
+function Get-UntrackedFilePromptSections {
+    param(
+        [int]$MaxFileChars = 12000,
+        [int]$MaxTotalChars = 48000
+    )
+
+    $untrackedFiles = git ls-files --others --exclude-standard
+    if (-not $untrackedFiles) {
+        return @()
+    }
+
+    $sections = @()
+    $totalChars = 0
+
+    foreach ($file in $untrackedFiles) {
+        if (-not (Test-Path $file -PathType Leaf)) {
+            continue
+        }
+
+        $section = ""
+        try {
+            $resolvedPath = (Resolve-Path $file).Path
+            $bytes = [System.IO.File]::ReadAllBytes($resolvedPath)
+
+            if ($bytes -contains 0) {
+                $section = "=== New untracked file: $file ===`n[binary file omitted]"
+            } else {
+                $content = [System.Text.Encoding]::UTF8.GetString($bytes)
+                if ($content.Length -gt $MaxFileChars) {
+                    $content = $content.Substring(0, $MaxFileChars) + "`n...[truncated]"
+                }
+                $section = "=== New untracked file: $file ===`n$content"
+            }
+        } catch {
+            $section = "=== New untracked file: $file ===`n[unable to read file: $($_.Exception.Message)]"
+        }
+
+        if (($totalChars + $section.Length) -gt $MaxTotalChars) {
+            $sections += "=== Additional untracked files omitted due to size limits ==="
+            break
+        }
+
+        $sections += $section
+        $totalChars += $section.Length
+    }
+
+    return $sections
+}
+
 function Invoke-AIRequest {
     param(
         [string]$Diff,
@@ -365,10 +414,12 @@ if ($Update) {
     $branchDiff = git diff "$defaultBranch...HEAD"
     $stagedDiff = git diff --staged
     $unstagedDiff = git diff
+    $untrackedSections = Get-UntrackedFilePromptSections
 
     Debug-Log "Branch diff vs '$defaultBranch' length: $($branchDiff.Length) characters"
     Debug-Log "Staged diff length: $($stagedDiff.Length) characters"
     Debug-Log "Unstaged diff length: $($unstagedDiff.Length) characters"
+    Debug-Log "Untracked file sections: $($untrackedSections.Count)"
 
     $diffParts = @()
     if ($branchDiff) {
@@ -379,6 +430,9 @@ if ($Update) {
     }
     if ($unstagedDiff) {
         $diffParts += "=== Newly unstaged changes ===`n$unstagedDiff"
+    }
+    if ($untrackedSections.Count -gt 0) {
+        $diffParts += $untrackedSections
     }
 
     $combinedDiff = $diffParts -join "`n`n"
@@ -477,9 +531,23 @@ if ($hasUncommittedChanges) {
 
     $diff = git diff --staged
     $unstagedDiff = git diff
+    $untrackedSections = Get-UntrackedFilePromptSections
     Debug-Log "Staged diff length: $($diff.Length) characters"
     Debug-Log "Unstaged diff length: $($unstagedDiff.Length) characters"
-    $combinedDiff = if ($diff) { $diff + "`n" + $unstagedDiff } else { $unstagedDiff }
+    Debug-Log "Untracked file sections: $($untrackedSections.Count)"
+
+    $diffParts = @()
+    if ($diff) {
+        $diffParts += "=== Newly staged changes ===`n$diff"
+    }
+    if ($unstagedDiff) {
+        $diffParts += "=== Newly unstaged changes ===`n$unstagedDiff"
+    }
+    if ($untrackedSections.Count -gt 0) {
+        $diffParts += $untrackedSections
+    }
+
+    $combinedDiff = $diffParts -join "`n`n"
     Debug-Log "Combined diff length: $($combinedDiff.Length) characters"
 
     Write-Host "Generating commit message and PR details with AI..." -ForegroundColor Cyan
