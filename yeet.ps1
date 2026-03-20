@@ -152,17 +152,44 @@ function Invoke-AIRequest {
         $defaultModel
     }
     $hasCurrentPrContext = -not [string]::IsNullOrWhiteSpace($CurrentPrTitle) -or -not [string]::IsNullOrWhiteSpace($CurrentPrDescription)
-    $titlePrompt = if ($hasCurrentPrContext) {
-        "Update the existing pull request title using the provided diff and current PR details. Make granular edits and preserve the current intent unless the new changes require adjustment. Keep the title brief (prefer 40-60 characters, hard max 72) while still covering the overall PR scope, including existing branch changes and newly added changes. Return only the title text, no markdown, no quotes."
-    } else {
-        "Generate a pull request title from the diff. Keep the title brief (prefer 40-60 characters, hard max 72) while still covering the full PR scope. Return only the title text, no markdown, no quotes."
+
+    $sections = @()
+    if ($NeedsCommitMessage) {
+        $sections += "COMMIT: <commit message>"
     }
-    $descriptionPrompt = if ($hasCurrentPrContext) {
-        "Update the existing pull request description in markdown using the provided diff and current PR details. Make granular edits to the current content instead of fully rewriting it. Preserve sections and wording where still accurate, and only adjust what changed. Return only the description body."
-    } else {
-        "Generate a pull request description in markdown from the diff. Use sections: ## Summary, ## Changes (bullet list), ## Notes. Return only the description body."
+    if ($NeedsPrDetails) {
+        $sections += "TITLE: <pr title>"
+        $sections += "DESCRIPTION: <pr description>"
     }
-    $commitPrompt = "Generate a git commit message from the diff. Keep it brief and to the point (prefer 30-55 characters, hard max 72). Return only one line in conventional commits format, no markdown, no quotes."
+    $formatInstructions = $sections -join " | "
+
+    if ($hasCurrentPrContext) {
+        $systemPrompt = @"
+Generate a git commit message, PR title, and PR description from the provided diff.
+
+Return your response using this exact format:
+$formatInstructions
+
+Rules:
+- COMMIT: One line in conventional commits format (max 72 chars), no quotes, no markdown
+- TITLE: Brief PR title (40-72 chars), no quotes, no markdown
+- DESCRIPTION: Markdown with sections ## Summary, ## Changes (bullet list), ## Notes
+
+When updating an existing PR, make granular edits that preserve the current intent unless the new changes require adjustment.
+"@
+} else {
+    $systemPrompt = @"
+Generate a git commit message, PR title, and PR description from the provided diff.
+
+Return your response using this exact format:
+$formatInstructions
+
+Rules:
+- COMMIT: One line in conventional commits format (max 72 chars), no quotes, no markdown
+- TITLE: Brief PR title (40-72 chars), no quotes, no markdown
+- DESCRIPTION: Markdown with sections ## Summary, ## Changes (bullet list), ## Notes
+"@
+}
 
     Debug-Log "Using model: $model"
 
@@ -172,139 +199,226 @@ function Invoke-AIRequest {
         Debug-Log "Including current PR title/description in AI context for granular updates"
     }
 
-    $jobScript = {
-        param($ApiKey, $Model, $Prompt, $InputText, $MaxTokens, $RequestName)
+    $lastErrorMessage = ""
+    $attempts = 0
+    $maxTokens = if ($NeedsPrDetails) { 1400 } else { 150 }
 
-        $lastErrorMessage = ""
-        for ($attempt = 1; $attempt -le 3; $attempt++) {
-            try {
-                $response = Invoke-RestMethod -Uri "https://openrouter.ai/api/v1/chat/completions" `
-                    -Method POST `
-                    -Headers @{
-                        "Authorization" = "Bearer $ApiKey"
-                        "Content-Type" = "application/json"
-                    } `
-                    -Body (@{
-                        model = $Model
-                        messages = @(
-                            @{ role = "system"; content = $Prompt }
-                            @{ role = "user"; content = $InputText }
-                        )
-                        max_tokens = $MaxTokens
-                        reasoning = @{ enabled = $false }
-                    } | ConvertTo-Json -Depth 10 -Compress)
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        $attempts = $attempt
 
-                $message = $response.choices[0].message
-                $output = ""
+        $loadingJob = Start-Job -ScriptBlock {
+            param($apiKey, $model, $systemPrompt, $requestInput, $maxTokens)
+            Invoke-RestMethod -Uri "https://openrouter.ai/api/v1/chat/completions" `
+                -Method POST `
+                -Headers @{
+                    "Authorization" = "Bearer $apiKey"
+                    "Content-Type" = "application/json"
+                } `
+                -Body (@{
+                    model = $model
+                    messages = @(
+                        @{ role = "system"; content = $systemPrompt }
+                        @{ role = "user"; content = $requestInput }
+                    )
+                    max_tokens = $maxTokens
+                    reasoning = @{ enabled = $false }
+                } | ConvertTo-Json -Depth 10 -Compress)
+        } -ArgumentList $apiKey, $model, $systemPrompt, $requestInput, $maxTokens
 
-                if ($message -and $message.content -is [string]) {
-                    $output = $message.content.Trim()
-                } elseif ($message -and $message.content -is [System.Collections.IEnumerable]) {
-                    $parts = @()
-                    foreach ($part in $message.content) {
-                        if ($part -is [string]) {
-                            $parts += $part
-                        } elseif ($part.PSObject.Properties["text"] -and $part.text) {
-                            $parts += [string]$part.text
+        $spinnerChars = @('⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏')
+        $startTime = Get-Date
+
+        while ($loadingJob.State -eq 'Running') {
+            $elapsed = ((Get-Date) - $startTime).TotalSeconds
+            $spinner = $spinnerChars[[int]($elapsed * 30) % $spinnerChars.Count]
+            Write-Host "`r$spinner Generating details..." -NoNewline -ForegroundColor Cyan
+            Start-Sleep -Milliseconds 33
+        }
+
+        Write-Host "`r" + (" " * 60) + "`r" -NoNewline
+
+        try {
+            $response = Receive-Job -Job $loadingJob -ErrorAction Stop | Select-Object -First 1
+        } finally {
+            Remove-Job -Job $loadingJob -Force -ErrorAction SilentlyContinue
+        }
+
+        $loadingJob = $null
+
+        try {
+            $message = $response.choices[0].message
+            $output = ""
+
+            if ($message -and $message.content -is [string]) {
+                $output = $message.content.Trim()
+            } elseif ($message -and $message.content -is [System.Collections.IEnumerable]) {
+                $parts = @()
+                foreach ($part in $message.content) {
+                    if ($part -is [string]) {
+                        $parts += $part
+                    } elseif ($part.PSObject.Properties["text"] -and $part.text) {
+                        $parts += [string]$part.text
+                    }
+                }
+                $output = ($parts -join "`n").Trim()
+            } elseif ($response.choices[0].text) {
+                $output = ([string]$response.choices[0].text).Trim()
+            }
+
+            if (-not $output) {
+                $lastErrorMessage = "Empty AI response"
+                Write-Host "`r[RETRY] Empty response, retrying ($attempt/3)..." -NoNewline -ForegroundColor Yellow
+                continue
+            }
+
+            $commitMessage = $null
+            $title = $null
+            $description = $null
+
+            $normalizedOutput = ($output -replace "`r", "")
+            $lines = $normalizedOutput -split "`n"
+            $descriptionLines = New-Object System.Collections.Generic.List[string]
+            $collectDescription = $false
+
+            foreach ($rawLine in $lines) {
+                if ($rawLine -match '^\s*```') {
+                    continue
+                }
+
+                $line = $rawLine.TrimEnd()
+
+                if ($line -match '^\s*(?i:COMMIT)\s*:\s*(.*)$') {
+                    if (-not $commitMessage) {
+                        $commitMessage = $matches[1].Trim()
+                    }
+                    $collectDescription = $false
+                    continue
+                }
+
+                if ($line -match '^\s*(?i:TITLE)\s*:\s*(.*)$') {
+                    if (-not $title) {
+                        $title = $matches[1].Trim()
+                    }
+                    $collectDescription = $false
+                    continue
+                }
+
+                if ($line -match '^\s*(?i:DESCRIPTION)\s*:\s*(.*)$') {
+                    $collectDescription = $true
+                    $firstDescriptionLine = $matches[1]
+                    if (-not [string]::IsNullOrWhiteSpace($firstDescriptionLine)) {
+                        $descriptionLines.Add($firstDescriptionLine.TrimEnd())
+                    }
+                    continue
+                }
+
+                if ($collectDescription) {
+                    $descriptionLines.Add($rawLine)
+                }
+            }
+
+            if ($NeedsCommitMessage -and -not $commitMessage) {
+                if ($normalizedOutput -match '(?is)\bCOMMIT\s*:\s*(.+?)(?=\s*\|\s*\bTITLE\s*:|\s*\+\s*TITLE\s*:|\s*\bTITLE\s*:|\s*\|\s*\bDESCRIPTION\s*:|\s*\+\s*DESCRIPTION\s*:|\s*\bDESCRIPTION\s*:|$)') {
+                    $commitMessage = $matches[1].Trim()
+                }
+            }
+
+            if ($NeedsPrDetails -and -not $title) {
+                if ($normalizedOutput -match '(?is)\bTITLE\s*:\s*(.+?)(?=\s*\|\s*\bDESCRIPTION\s*:|\s*\+\s*DESCRIPTION\s*:|\s*\bDESCRIPTION\s*:|$)') {
+                    $title = $matches[1].Trim()
+                }
+            }
+
+            if ($NeedsPrDetails -and $descriptionLines.Count -eq 0) {
+                if ($normalizedOutput -match '(?is)\bDESCRIPTION\s*:\s*(.+)$') {
+                    $inlineDescription = $matches[1].Trim()
+                    if ($inlineDescription) {
+                        $descriptionLines.Add($inlineDescription)
+                    }
+                }
+            }
+
+            if ($NeedsCommitMessage -and $commitMessage) {
+                $commitMessage = ($commitMessage -replace '^["''`]+|["''`]+$', '').Trim()
+            }
+
+            if ($NeedsPrDetails -and $title) {
+                $title = ($title -replace '^["''`]+|["''`]+$', '').Trim()
+            }
+
+            if ($NeedsPrDetails) {
+                if ($descriptionLines.Count -gt 0) {
+                    $description = ($descriptionLines -join "`n").Trim()
+                    if ($description -and $description -match '\\n') {
+                        $description = $description -replace '\\n', "`n"
+                    }
+                } else {
+                    $descriptionFallback = $normalizedOutput -replace '(?im)^\s*(COMMIT|TITLE)\s*:\s*.*$\n?', ''
+                    $descriptionFallback = ($descriptionFallback -replace '(?im)^\s*DESCRIPTION\s*:\s*', '').Trim()
+                    if ($descriptionFallback) {
+                        $description = $descriptionFallback
+                        if ($description -match '\\n') {
+                            $description = $description -replace '\\n', "`n"
                         }
                     }
-                    $output = ($parts -join "`n").Trim()
-                } elseif ($response.choices[0].text) {
-                    $output = ([string]$response.choices[0].text).Trim()
                 }
-
-                if ($output) {
-                    return [PSCustomObject]@{
-                        ok = $true
-                        request = $RequestName
-                        output = $output
-                        attempts = $attempt
-                        error = ""
-                    }
-                }
-                $lastErrorMessage = "Empty AI response"
-            } catch {
-                $lastErrorMessage = $_.Exception.Message
             }
+
+            $valid = $true
+            if ($NeedsCommitMessage -and -not $commitMessage) { $valid = $false }
+            if ($NeedsPrDetails -and -not $title) { $valid = $false }
+            if ($NeedsPrDetails -and -not $description) { $valid = $false }
+
+            if ($valid) {
+                if ($attempt -gt 1) {
+                    Write-Host "[RETRY] Succeeded on attempt $attempt" -ForegroundColor Yellow
+                }
+
+                if ($commitMessage -and $commitMessage.Length -gt 72) {
+                    $commitMessage = $commitMessage.Substring(0, 72).Trim()
+                }
+
+                Debug-Log "Generated commit message length: $(if($commitMessage){$commitMessage.Length}else{0})"
+                if ($NeedsPrDetails) {
+                    Debug-Log "Generated title length: $($title.Length)"
+                    Debug-Log "Generated description length: $($description.Length)"
+                }
+
+                return [PSCustomObject]@{
+                    'commit-message' = $commitMessage
+                    title = $title
+                    description = $description
+                    attempts = $attempt
+                }
+            }
+
+            if ($DebugMode) {
+                $missingFields = @()
+                if ($NeedsCommitMessage -and -not $commitMessage) { $missingFields += "COMMIT" }
+                if ($NeedsPrDetails -and -not $title) { $missingFields += "TITLE" }
+                if ($NeedsPrDetails -and -not $description) { $missingFields += "DESCRIPTION" }
+                $missingText = if ($missingFields.Count -gt 0) { $missingFields -join ", " } else { "unknown" }
+                Debug-Log "Parse error on attempt $attempt. Missing fields: $missingText"
+
+                $previewLimit = 1200
+                $outputPreview = if ($output.Length -gt $previewLimit) {
+                    $output.Substring(0, $previewLimit) + "... [truncated]"
+                } else {
+                    $output
+                }
+                Debug-Log "Raw AI output preview:`n$outputPreview"
+            }
+
+            $lastErrorMessage = "Failed to parse response: missing fields"
+            Write-Host "`r[RETRY] Parse error, retrying ($attempt/3)..." -NoNewline -ForegroundColor Yellow
+        } catch {
+            $lastErrorMessage = $_.Exception.Message
+            Write-Host "`r[RETRY] Error: $($_.Exception.Message), retrying ($attempt/3)..." -NoNewline -ForegroundColor Yellow
         }
-
-        return [PSCustomObject]@{
-            ok = $false
-            request = $RequestName
-            output = ""
-            attempts = 3
-            error = $lastErrorMessage
-        }
     }
 
-    $jobs = @()
-    if ($NeedsCommitMessage) {
-        $jobs += Start-Job -ScriptBlock $jobScript -ArgumentList $apiKey, $model, $commitPrompt, $requestInput, 120, "commit message"
-    }
-    if ($NeedsPrDetails) {
-        $jobs += Start-Job -ScriptBlock $jobScript -ArgumentList $apiKey, $model, $titlePrompt, $requestInput, 120, "PR title"
-        $jobs += Start-Job -ScriptBlock $jobScript -ArgumentList $apiKey, $model, $descriptionPrompt, $requestInput, 1200, "PR description"
-    }
-    Debug-Log "Started $($jobs.Count) AI request job(s)"
-
-    Wait-Job -Job $jobs | Out-Null
-    Debug-Log "All AI request jobs completed"
-    $results = @()
-    foreach ($job in $jobs) {
-        $jobOutput = Receive-Job -Job $job -ErrorAction SilentlyContinue
-        if ($jobOutput -is [System.Array]) {
-            $jobOutput = $jobOutput[-1]
-        }
-
-        $results += [PSCustomObject]@{
-            id = $job.Id
-            state = $job.State
-            output = $jobOutput
-        }
-    }
-    $jobs | Remove-Job -Force
-
-    $failedRequests = @($results | Where-Object { $_.state -ne "Completed" -or -not $_.output -or -not $_.output.ok })
-    if ($failedRequests.Count -gt 0) {
-        $failedDetails = ($failedRequests | ForEach-Object {
-            $name = if ($_.output -and $_.output.request) { $_.output.request } else { "unknown request" }
-            $errorMessage = if ($_.output -and $_.output.error) { $_.output.error } else { "No error response captured" }
-            "$name ($errorMessage)"
-        }) -join "; "
-
-        Write-Error "AI request failed after 3 retries: $failedDetails"
-        exit 1
-    }
-
-    $resultIndex = 0
-    $commitMessage = $null
-    if ($NeedsCommitMessage) {
-        $commitMessage = [string]$results[$resultIndex].output.output
-        if ($commitMessage.Length -gt 72) {
-            $commitMessage = $commitMessage.Substring(0, 72).Trim()
-        }
-        $resultIndex++
-    }
-
-    $title = $null
-    $description = $null
-    if ($NeedsPrDetails) {
-        $title = [string]$results[$resultIndex].output.output
-        $resultIndex++
-        $description = [string]$results[$resultIndex].output.output
-    }
-
-    Debug-Log "Generated commit message length: $($commitMessage.Length)"
-    if ($NeedsPrDetails) {
-        Debug-Log "Generated title length: $($title.Length)"
-        Debug-Log "Generated description length: $($description.Length)"
-    }
-
-    return [PSCustomObject]@{
-        'commit-message' = $commitMessage
-        title = $title
-        description = $description
-    }
+    Write-Error "AI request failed after 3 retries: $lastErrorMessage"
+    exit 1
 }
 
 Debug-Log "Starting Git PR Creator"
