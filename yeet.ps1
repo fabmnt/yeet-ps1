@@ -61,6 +61,35 @@ function Get-CleanContent {
     $Content.Trim()
 }
 
+function Get-ObjectPropertyValue {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Object,
+        [Parameter(Mandatory = $true)]
+        [string[]]$Names
+    )
+
+    foreach ($name in $Names) {
+        $prop = $Object.PSObject.Properties[$name]
+        if ($prop -and $prop.Value) {
+            return [string]$prop.Value
+        }
+    }
+
+    return $null
+}
+
+function Get-GeneratedBranchName {
+    param([string]$Title)
+
+    $branchName = ($Title -replace '\s+', '-' -replace '[^a-zA-Z0-9\-]', '' -replace '-{2,}', '-').ToLower().Trim('-')
+    if (-not $branchName) {
+        $branchName = "update-changes"
+    }
+
+    return $branchName
+}
+
 function Invoke-AIRequest {
     param([string]$Diff, [bool]$NeedsCommitMessage)
 
@@ -118,7 +147,40 @@ Example: {""title"": ""Fix image navigation in ExecutionFlowCard"", ""descriptio
 
     try {
         $json = $cleanContent | ConvertFrom-Json
-        return $json
+
+        $title = Get-ObjectPropertyValue -Object $json -Names @("title", "pr-title", "pr_title", "prTitle", "name")
+        $description = Get-ObjectPropertyValue -Object $json -Names @("description", "body", "pr-description", "pr_description", "details")
+        $commitMessage = if ($NeedsCommitMessage) {
+            Get-ObjectPropertyValue -Object $json -Names @("commit-message", "commit_message", "commitMessage", "commit", "message", "subject")
+        } else {
+            $null
+        }
+
+        if (-not $title -and $commitMessage) {
+            $title = ($commitMessage -replace '^[a-z]+(\([^)]+\))?!?:\s*', '').Trim()
+        }
+
+        if (-not $commitMessage -and $NeedsCommitMessage -and $title) {
+            $commitMessage = "chore: $title"
+        }
+
+        if (-not $title) {
+            $title = "Update project changes"
+        }
+
+        if (-not $description) {
+            $description = "## Summary`nUpdated code based on the current diff.`n`n## Changes`n- Applied the updates reflected in this branch.`n`n## Notes`nGenerated fallback description because AI output was incomplete."
+        }
+
+        if ($NeedsCommitMessage -and $commitMessage.Length -gt 72) {
+            $commitMessage = $commitMessage.Substring(0, 72).Trim()
+        }
+
+        return [PSCustomObject]@{
+            'commit-message' = $commitMessage
+            title = $title
+            description = $description
+        }
     } catch {
         Write-Error "Failed to parse AI response as JSON: $cleanContent"
         exit 1
@@ -214,7 +276,7 @@ if ($hasUncommittedChanges) {
     Debug-Log "PR title: $title"
     Debug-Log "PR description: $description"
 
-    $branchName = ($title -replace '\s+', '-' -replace '[^a-zA-Z0-9\-]', '').ToLower()
+    $branchName = Get-GeneratedBranchName -Title $title
     Debug-Log "Branch name: $branchName"
 } else {
     Write-Host "No uncommitted changes." -ForegroundColor Yellow
