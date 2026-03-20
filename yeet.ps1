@@ -43,6 +43,7 @@ function Debug-Log {
 
 $profilePath = "$env:USERPROFILE\Documents\PowerShell\Microsoft.PowerShell_profile.ps1"
 if (-not $env:OPENROUTER_API_KEY -and (Test-Path $profilePath)) {
+    Debug-Log "Loading PowerShell profile from: $profilePath"
     . $profilePath
 }
 
@@ -51,17 +52,21 @@ if (-not $apiKey) {
     Write-Error "OPENROUTER_API_KEY environment variable is not set"
     exit 1
 }
+Debug-Log "OPENROUTER_API_KEY detected"
 
 if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
     Write-Error "GitHub CLI ('gh') is not installed or not available on PATH. Install it from https://cli.github.com/ and try again."
     exit 1
 }
+Debug-Log "GitHub CLI detected"
 
+Debug-Log "Checking GitHub CLI authentication status"
 gh auth status 2>&1 | Out-Null
 if ($LASTEXITCODE -ne 0) {
     Write-Error "GitHub CLI is not authenticated. Please run 'gh auth login' first."
     exit 1
 }
+Debug-Log "GitHub CLI authentication verified"
 
 function Get-GeneratedBranchName {
     param([string]$Title)
@@ -70,6 +75,8 @@ function Get-GeneratedBranchName {
     if (-not $branchName) {
         $branchName = "update-changes"
     }
+
+    Debug-Log "Generated branch name '$branchName' from title '$Title'"
 
     return $branchName
 }
@@ -162,8 +169,10 @@ function Invoke-AIRequest {
     }
     $jobs += Start-Job -ScriptBlock $jobScript -ArgumentList $apiKey, $model, $titlePrompt, $Diff, 120, "PR title"
     $jobs += Start-Job -ScriptBlock $jobScript -ArgumentList $apiKey, $model, $descriptionPrompt, $Diff, 1200, "PR description"
+    Debug-Log "Started $($jobs.Count) AI request job(s)"
 
     Wait-Job -Job $jobs | Out-Null
+    Debug-Log "All AI request jobs completed"
     $results = @()
     foreach ($job in $jobs) {
         $jobOutput = Receive-Job -Job $job -ErrorAction SilentlyContinue
@@ -268,9 +277,11 @@ if ($Merge) {
 
     Write-Host ""
     Write-Host "Merging PR #$prNumber..." -ForegroundColor Green
+    Debug-Log "Running merge command for PR #$prNumber"
     gh pr merge $prNumber --squash --delete-branch
 
     Write-Host "Switching to $prBase and pulling latest..." -ForegroundColor Green
+    Debug-Log "Checking out '$prBase' and pulling latest from origin"
     git checkout $prBase
     git pull origin $prBase
 
@@ -311,6 +322,8 @@ if ($Update) {
 
     $diff = git diff --staged
     $unstagedDiff = git diff
+    Debug-Log "Staged diff length: $($diff.Length) characters"
+    Debug-Log "Unstaged diff length: $($unstagedDiff.Length) characters"
     $combinedDiff = if ($diff) { $diff + "`n" + $unstagedDiff } else { $unstagedDiff }
     Debug-Log "Combined diff length: $($combinedDiff.Length) characters"
 
@@ -347,13 +360,17 @@ if ($Update) {
 
     Write-Host ""
     Write-Host "Committing changes..." -ForegroundColor Green
+    Debug-Log "Staging all changes for update"
     git add .
+    Debug-Log "Creating commit with message: $commitMessage"
     git commit -m $commitMessage
 
     Write-Host "Pushing changes to remote branch..." -ForegroundColor Green
+    Debug-Log "Pushing '$currentBranch' to origin"
     git push origin $currentBranch
 
     Write-Host "Updating PR #$prNumber..." -ForegroundColor Green
+    Debug-Log "Editing PR #$prNumber title/body"
     gh pr edit $prNumber --title $title --body $description
 
     Write-Host ""
@@ -370,6 +387,8 @@ if ($hasUncommittedChanges) {
 
     $diff = git diff --staged
     $unstagedDiff = git diff
+    Debug-Log "Staged diff length: $($diff.Length) characters"
+    Debug-Log "Unstaged diff length: $($unstagedDiff.Length) characters"
     $combinedDiff = if ($diff) { $diff + "`n" + $unstagedDiff } else { $unstagedDiff }
     Debug-Log "Combined diff length: $($combinedDiff.Length) characters"
 
@@ -464,16 +483,21 @@ Debug-Log "Creating PR with title: '$title' on base: $defaultBranch"
 
 if ($hasUncommittedChanges) {
     Write-Host "Creating branch: $branchName" -ForegroundColor Green
+    Debug-Log "Creating and switching to branch '$branchName'"
     git checkout -b $branchName
 
     Write-Host "Committing changes..." -ForegroundColor Green
+    Debug-Log "Staging all changes for initial PR commit"
     git add .
+    Debug-Log "Creating commit with message: $commitMessage"
     git commit -m $commitMessage
 }
 
 Write-Host "Pushing branch to remote..." -ForegroundColor Green
+Debug-Log "Pushing '$branchName' with upstream to origin"
 git push -u origin $branchName
 
+Debug-Log "Creating PR on base '$defaultBranch'"
 $prUrl = gh pr create `
     --title $title `
     --body $description `
