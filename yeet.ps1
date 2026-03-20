@@ -4,6 +4,8 @@ param(
     [switch]$Merge,
     [Alias("u")]
     [switch]$Update,
+    [Alias("n")]
+    [switch]$New,
     [Alias("h")]
     [switch]$Help
 )
@@ -14,18 +16,20 @@ function Show-Help {
     Write-Host ""
     Write-Host "yeet - Git PR Creator CLI" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "Usage: yeet [-DebugMode] [-Merge] [-Update] [-Help]" -ForegroundColor White
+    Write-Host "Usage: yeet [-DebugMode] [-Merge] [-Update [-New]] [-Help]" -ForegroundColor White
     Write-Host ""
     Write-Host "Options:" -ForegroundColor Yellow
     Write-Host "  -DebugMode, -D          Enable debug output" -ForegroundColor White
     Write-Host "  -Merge, -m              Merge an existing PR to base branch" -ForegroundColor White
     Write-Host "  -Update, -u             Update existing PR from current branch changes" -ForegroundColor White
+    Write-Host "  -New, -n                With -Update, also refresh PR title/description" -ForegroundColor White
     Write-Host "  -Help, -h               Show this help message" -ForegroundColor White
     Write-Host ""
     Write-Host "Description:" -ForegroundColor Yellow
     Write-Host "  Creates PRs with AI-generated commit messages, titles, and descriptions." -ForegroundColor White
     Write-Host "  With -Merge: merges the current branch PR and updates local base branch." -ForegroundColor White
-    Write-Host "  With -Update: commits uncommitted changes and updates open PR title/body." -ForegroundColor White
+    Write-Host "  With -Update: commits and pushes uncommitted changes to the open PR branch." -ForegroundColor White
+    Write-Host "  With -Update -New: also regenerates and updates open PR title/body." -ForegroundColor White
     Write-Host ""
     exit 0
 }
@@ -43,6 +47,7 @@ function Debug-Log {
 
 $profilePath = "$env:USERPROFILE\Documents\PowerShell\Microsoft.PowerShell_profile.ps1"
 if (-not $env:OPENROUTER_API_KEY -and (Test-Path $profilePath)) {
+    Debug-Log "Loading PowerShell profile from: $profilePath"
     . $profilePath
 }
 
@@ -51,17 +56,21 @@ if (-not $apiKey) {
     Write-Error "OPENROUTER_API_KEY environment variable is not set"
     exit 1
 }
+Debug-Log "OPENROUTER_API_KEY detected"
 
 if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
     Write-Error "GitHub CLI ('gh') is not installed or not available on PATH. Install it from https://cli.github.com/ and try again."
     exit 1
 }
+Debug-Log "GitHub CLI detected"
 
+Debug-Log "Checking GitHub CLI authentication status"
 gh auth status 2>&1 | Out-Null
 if ($LASTEXITCODE -ne 0) {
     Write-Error "GitHub CLI is not authenticated. Please run 'gh auth login' first."
     exit 1
 }
+Debug-Log "GitHub CLI authentication verified"
 
 function Get-GeneratedBranchName {
     param([string]$Title)
@@ -71,19 +80,51 @@ function Get-GeneratedBranchName {
         $branchName = "update-changes"
     }
 
+    Debug-Log "Generated branch name '$branchName' from title '$Title'"
+
     return $branchName
 }
 
 function Invoke-AIRequest {
-    param([string]$Diff, [bool]$NeedsCommitMessage)
+    param(
+        [string]$Diff,
+        [bool]$NeedsCommitMessage,
+        [bool]$NeedsPrDetails = $true,
+        [string]$CurrentPrTitle = "",
+        [string]$CurrentPrDescription = ""
+    )
 
-    $model = "nvidia/nemotron-3-super-120b-a12b:free"
-    $titlePrompt = "Generate a pull request title from the diff. Return only the title text, max 72 characters, no markdown, no quotes."
-    $descriptionPrompt = "Generate a pull request description in markdown from the diff. Use sections: ## Summary, ## Changes (bullet list), ## Notes. Return only the description body."
-    $commitPrompt = "Generate a git commit message from the diff. Return only one line in conventional commits format and max 72 characters."
+    $defaultModel = "nvidia/nemotron-3-super-120b-a12b:free"
+    $model = if ($env:OPENROUTER_MODEL_ID) {
+        $env:OPENROUTER_MODEL_ID
+    } elseif ($env:OPENROUTER_MODEL) {
+        $env:OPENROUTER_MODEL
+    } else {
+        $defaultModel
+    }
+    $hasCurrentPrContext = -not [string]::IsNullOrWhiteSpace($CurrentPrTitle) -or -not [string]::IsNullOrWhiteSpace($CurrentPrDescription)
+    $titlePrompt = if ($hasCurrentPrContext) {
+        "Update the existing pull request title using the provided diff and current PR details. Make granular edits and preserve the current intent unless the new changes require adjustment. Keep the title brief (prefer 40-60 characters, hard max 72) while still covering the overall PR scope, including existing branch changes and newly added changes. Return only the title text, no markdown, no quotes."
+    } else {
+        "Generate a pull request title from the diff. Keep the title brief (prefer 40-60 characters, hard max 72) while still covering the full PR scope. Return only the title text, no markdown, no quotes."
+    }
+    $descriptionPrompt = if ($hasCurrentPrContext) {
+        "Update the existing pull request description in markdown using the provided diff and current PR details. Make granular edits to the current content instead of fully rewriting it. Preserve sections and wording where still accurate, and only adjust what changed. Return only the description body."
+    } else {
+        "Generate a pull request description in markdown from the diff. Use sections: ## Summary, ## Changes (bullet list), ## Notes. Return only the description body."
+    }
+    $commitPrompt = "Generate a git commit message from the diff. Keep it brief and to the point (prefer 30-55 characters, hard max 72). Return only one line in conventional commits format, no markdown, no quotes."
+
+    Debug-Log "Using model: $model"
+
+    $requestInput = "Diff:`n$Diff"
+    if ($hasCurrentPrContext) {
+        $requestInput += "`n`nCurrent PR title:`n$CurrentPrTitle`n`nCurrent PR description:`n$CurrentPrDescription"
+        Debug-Log "Including current PR title/description in AI context for granular updates"
+    }
 
     $jobScript = {
-        param($ApiKey, $Model, $Prompt, $DiffText, $MaxTokens, $RequestName)
+        param($ApiKey, $Model, $Prompt, $InputText, $MaxTokens, $RequestName)
 
         $lastErrorMessage = ""
         for ($attempt = 1; $attempt -le 3; $attempt++) {
@@ -98,7 +139,7 @@ function Invoke-AIRequest {
                         model = $Model
                         messages = @(
                             @{ role = "system"; content = $Prompt }
-                            @{ role = "user"; content = "Diff:`n$DiffText" }
+                            @{ role = "user"; content = $InputText }
                         )
                         max_tokens = $MaxTokens
                         reasoning = @{ enabled = $false }
@@ -149,12 +190,16 @@ function Invoke-AIRequest {
 
     $jobs = @()
     if ($NeedsCommitMessage) {
-        $jobs += Start-Job -ScriptBlock $jobScript -ArgumentList $apiKey, $model, $commitPrompt, $Diff, 120, "commit message"
+        $jobs += Start-Job -ScriptBlock $jobScript -ArgumentList $apiKey, $model, $commitPrompt, $requestInput, 120, "commit message"
     }
-    $jobs += Start-Job -ScriptBlock $jobScript -ArgumentList $apiKey, $model, $titlePrompt, $Diff, 120, "PR title"
-    $jobs += Start-Job -ScriptBlock $jobScript -ArgumentList $apiKey, $model, $descriptionPrompt, $Diff, 1200, "PR description"
+    if ($NeedsPrDetails) {
+        $jobs += Start-Job -ScriptBlock $jobScript -ArgumentList $apiKey, $model, $titlePrompt, $requestInput, 120, "PR title"
+        $jobs += Start-Job -ScriptBlock $jobScript -ArgumentList $apiKey, $model, $descriptionPrompt, $requestInput, 1200, "PR description"
+    }
+    Debug-Log "Started $($jobs.Count) AI request job(s)"
 
     Wait-Job -Job $jobs | Out-Null
+    Debug-Log "All AI request jobs completed"
     $results = @()
     foreach ($job in $jobs) {
         $jobOutput = Receive-Job -Job $job -ErrorAction SilentlyContinue
@@ -192,13 +237,19 @@ function Invoke-AIRequest {
         $resultIndex++
     }
 
-    $title = [string]$results[$resultIndex].output.output
-    $resultIndex++
-    $description = [string]$results[$resultIndex].output.output
+    $title = $null
+    $description = $null
+    if ($NeedsPrDetails) {
+        $title = [string]$results[$resultIndex].output.output
+        $resultIndex++
+        $description = [string]$results[$resultIndex].output.output
+    }
 
     Debug-Log "Generated commit message length: $($commitMessage.Length)"
-    Debug-Log "Generated title length: $($title.Length)"
-    Debug-Log "Generated description length: $($description.Length)"
+    if ($NeedsPrDetails) {
+        Debug-Log "Generated title length: $($title.Length)"
+        Debug-Log "Generated description length: $($description.Length)"
+    }
 
     return [PSCustomObject]@{
         'commit-message' = $commitMessage
@@ -225,6 +276,11 @@ if (-not $defaultBranch) {
     $defaultBranch = "main"
 }
 Debug-Log "Default branch: $defaultBranch"
+
+if ($New -and -not $Update) {
+    Write-Error "-New can only be used together with -Update"
+    exit 1
+}
 
 if ($Merge) {
     if ($hasUncommittedChanges) {
@@ -259,9 +315,11 @@ if ($Merge) {
 
     Write-Host ""
     Write-Host "Merging PR #$prNumber..." -ForegroundColor Green
+    Debug-Log "Running merge command for PR #$prNumber"
     gh pr merge $prNumber --squash --delete-branch
 
     Write-Host "Switching to $prBase and pulling latest..." -ForegroundColor Green
+    Debug-Log "Checking out '$prBase' and pulling latest from origin"
     git checkout $prBase
     git pull origin $prBase
 
@@ -286,7 +344,7 @@ if ($Update) {
         exit 1
     }
 
-    $openPr = gh pr list --head $currentBranch --state open --json number,title,url --jq '.[0]'
+    $openPr = gh pr list --head $currentBranch --state open --json number,title,body,url --jq '.[0]'
     Debug-Log "Open PR check result: $openPr"
     if (-not $openPr -or $openPr -eq '' -or $openPr -eq 'null') {
         Write-Error "No open PR found for branch '$currentBranch'. Create a PR first or run without -Update."
@@ -295,24 +353,54 @@ if ($Update) {
 
     $prData = $openPr | ConvertFrom-Json
     $prNumber = $prData.number
+    $currentPrTitle = [string]$prData.title
+    $currentPrDescription = [string]$prData.body
+    Debug-Log "Current PR title length: $($currentPrTitle.Length)"
+    Debug-Log "Current PR description length: $($currentPrDescription.Length)"
 
     Write-Host "Uncommitted changes detected:" -ForegroundColor Yellow
     git status --short
     Write-Host ""
 
-    $diff = git diff --staged
+    $branchDiff = git diff "$defaultBranch...HEAD"
+    $stagedDiff = git diff --staged
     $unstagedDiff = git diff
-    $combinedDiff = if ($diff) { $diff + "`n" + $unstagedDiff } else { $unstagedDiff }
-    Debug-Log "Combined diff length: $($combinedDiff.Length) characters"
 
-    Write-Host "Generating updated commit message and PR details with AI..." -ForegroundColor Cyan
-    $aiResult = Invoke-AIRequest -Diff $combinedDiff -NeedsCommitMessage $true
+    Debug-Log "Branch diff vs '$defaultBranch' length: $($branchDiff.Length) characters"
+    Debug-Log "Staged diff length: $($stagedDiff.Length) characters"
+    Debug-Log "Unstaged diff length: $($unstagedDiff.Length) characters"
+
+    $diffParts = @()
+    if ($branchDiff) {
+        $diffParts += "=== Existing branch changes vs $defaultBranch ===`n$branchDiff"
+    }
+    if ($stagedDiff) {
+        $diffParts += "=== Newly staged changes ===`n$stagedDiff"
+    }
+    if ($unstagedDiff) {
+        $diffParts += "=== Newly unstaged changes ===`n$unstagedDiff"
+    }
+
+    $combinedDiff = $diffParts -join "`n`n"
+    Debug-Log "Combined update diff length: $($combinedDiff.Length) characters"
+
+    if (-not $combinedDiff) {
+        Write-Error "No diff content found to generate update details."
+        exit 1
+    }
+
+    if ($New) {
+        Write-Host "Generating updated commit message and PR details with AI..." -ForegroundColor Cyan
+    } else {
+        Write-Host "Generating updated commit message with AI..." -ForegroundColor Cyan
+    }
+    $aiResult = Invoke-AIRequest -Diff $combinedDiff -NeedsCommitMessage $true -NeedsPrDetails $New -CurrentPrTitle $currentPrTitle -CurrentPrDescription $currentPrDescription
 
     $commitMessage = $aiResult.'commit-message'
-    $title = $aiResult.title
-    $description = $aiResult.description
+    $title = if ($New) { $aiResult.title } else { $currentPrTitle }
+    $description = if ($New) { $aiResult.description } else { $currentPrDescription }
 
-    if (-not $commitMessage -or -not $title) {
+    if (-not $commitMessage -or ($New -and -not $title)) {
         Write-Error "AI returned incomplete response"
         exit 1
     }
@@ -323,11 +411,20 @@ if ($Update) {
     Write-Host "Branch: $currentBranch" -ForegroundColor White
     Write-Host "Commit: $commitMessage" -ForegroundColor White
     Write-Host "" 
-    Write-Host "PR Title: $title" -ForegroundColor Yellow
-    Write-Host "PR Description: $description" -ForegroundColor White
+    if ($New) {
+        Write-Host "PR Title: $title" -ForegroundColor Yellow
+        Write-Host "PR Description: $description" -ForegroundColor White
+    } else {
+        Write-Host "PR Title: (unchanged) $title" -ForegroundColor Yellow
+        Write-Host "PR Description: (unchanged) $description" -ForegroundColor White
+    }
     Write-Host ""
 
-    Write-Host "Press ENTER to commit, push, and update PR; ESCAPE to cancel..." -ForegroundColor Magenta
+    if ($New) {
+        Write-Host "Press ENTER to commit, push, and update PR; ESCAPE to cancel..." -ForegroundColor Magenta
+    } else {
+        Write-Host "Press ENTER to commit and push; ESCAPE to cancel..." -ForegroundColor Magenta
+    }
     $key = $Host.UI.RawUI.ReadKey([System.Management.Automation.Host.ReadKeyOptions]::NoEcho -bor [System.Management.Automation.Host.ReadKeyOptions]::IncludeKeyDown)
 
     if ($key.VirtualKeyCode -eq 27) {
@@ -338,18 +435,37 @@ if ($Update) {
 
     Write-Host ""
     Write-Host "Committing changes..." -ForegroundColor Green
+    Debug-Log "Staging all changes for update"
     git add .
+    Debug-Log "Creating commit with message: $commitMessage"
     git commit -m $commitMessage
 
     Write-Host "Pushing changes to remote branch..." -ForegroundColor Green
+    Debug-Log "Pushing '$currentBranch' to origin"
     git push origin $currentBranch
 
-    Write-Host "Updating PR #$prNumber..." -ForegroundColor Green
-    gh pr edit $prNumber --title $title --body $description
+    if ($New) {
+        Write-Host "Updating PR #$prNumber..." -ForegroundColor Green
+        Debug-Log "Editing PR #$prNumber title/body"
+        gh pr edit $prNumber --title $title --body $description
+    } else {
+        Debug-Log "Skipping PR title/description update (use -New with -Update to enable)"
+    }
 
     Write-Host ""
-    Write-Host "PR updated successfully!" -ForegroundColor Green
-    Write-Host "Updated PR Title: $title" -ForegroundColor Yellow
+    if ($New) {
+        Write-Host "PR updated successfully!" -ForegroundColor Green
+    } else {
+        Write-Host "PR commit pushed successfully!" -ForegroundColor Green
+    }
+    Write-Host "New Commit Message: $commitMessage" -ForegroundColor White
+    if ($New) {
+        Write-Host "Updated PR Title: $title" -ForegroundColor Yellow
+        Write-Host "Updated PR Description: $description" -ForegroundColor White
+    } else {
+        Write-Host "PR Title: (unchanged) $title" -ForegroundColor Yellow
+        Write-Host "PR Description: (unchanged) $description" -ForegroundColor White
+    }
     Write-Host "PR URL: $($prData.url)" -ForegroundColor Cyan
     exit 0
 }
@@ -361,6 +477,8 @@ if ($hasUncommittedChanges) {
 
     $diff = git diff --staged
     $unstagedDiff = git diff
+    Debug-Log "Staged diff length: $($diff.Length) characters"
+    Debug-Log "Unstaged diff length: $($unstagedDiff.Length) characters"
     $combinedDiff = if ($diff) { $diff + "`n" + $unstagedDiff } else { $unstagedDiff }
     Debug-Log "Combined diff length: $($combinedDiff.Length) characters"
 
@@ -455,16 +573,21 @@ Debug-Log "Creating PR with title: '$title' on base: $defaultBranch"
 
 if ($hasUncommittedChanges) {
     Write-Host "Creating branch: $branchName" -ForegroundColor Green
+    Debug-Log "Creating and switching to branch '$branchName'"
     git checkout -b $branchName
 
     Write-Host "Committing changes..." -ForegroundColor Green
+    Debug-Log "Staging all changes for initial PR commit"
     git add .
+    Debug-Log "Creating commit with message: $commitMessage"
     git commit -m $commitMessage
 }
 
 Write-Host "Pushing branch to remote..." -ForegroundColor Green
+Debug-Log "Pushing '$branchName' with upstream to origin"
 git push -u origin $branchName
 
+Debug-Log "Creating PR on base '$defaultBranch'"
 $prUrl = gh pr create `
     --title $title `
     --body $description `
