@@ -82,7 +82,12 @@ function Get-GeneratedBranchName {
 }
 
 function Invoke-AIRequest {
-    param([string]$Diff, [bool]$NeedsCommitMessage)
+    param(
+        [string]$Diff,
+        [bool]$NeedsCommitMessage,
+        [string]$CurrentPrTitle = "",
+        [string]$CurrentPrDescription = ""
+    )
 
     $defaultModel = "nvidia/nemotron-3-super-120b-a12b:free"
     $model = if ($env:OPENROUTER_MODEL_ID) {
@@ -92,14 +97,29 @@ function Invoke-AIRequest {
     } else {
         $defaultModel
     }
-    $titlePrompt = "Generate a pull request title from the diff. Return only the title text, max 72 characters, no markdown, no quotes."
-    $descriptionPrompt = "Generate a pull request description in markdown from the diff. Use sections: ## Summary, ## Changes (bullet list), ## Notes. Return only the description body."
+    $hasCurrentPrContext = -not [string]::IsNullOrWhiteSpace($CurrentPrTitle) -or -not [string]::IsNullOrWhiteSpace($CurrentPrDescription)
+    $titlePrompt = if ($hasCurrentPrContext) {
+        "Update the existing pull request title using the provided diff and current PR details. Make granular edits and preserve the current intent unless the new changes require adjustment. Keep the title brief (prefer 40-60 characters, hard max 72) while still covering the overall PR scope, including existing branch changes and newly added changes. Return only the title text, no markdown, no quotes."
+    } else {
+        "Generate a pull request title from the diff. Keep the title brief (prefer 40-60 characters, hard max 72) while still covering the full PR scope. Return only the title text, no markdown, no quotes."
+    }
+    $descriptionPrompt = if ($hasCurrentPrContext) {
+        "Update the existing pull request description in markdown using the provided diff and current PR details. Make granular edits to the current content instead of fully rewriting it. Preserve sections and wording where still accurate, and only adjust what changed. Return only the description body."
+    } else {
+        "Generate a pull request description in markdown from the diff. Use sections: ## Summary, ## Changes (bullet list), ## Notes. Return only the description body."
+    }
     $commitPrompt = "Generate a git commit message from the diff. Return only one line in conventional commits format and max 72 characters."
 
     Debug-Log "Using model: $model"
 
+    $requestInput = "Diff:`n$Diff"
+    if ($hasCurrentPrContext) {
+        $requestInput += "`n`nCurrent PR title:`n$CurrentPrTitle`n`nCurrent PR description:`n$CurrentPrDescription"
+        Debug-Log "Including current PR title/description in AI context for granular updates"
+    }
+
     $jobScript = {
-        param($ApiKey, $Model, $Prompt, $DiffText, $MaxTokens, $RequestName)
+        param($ApiKey, $Model, $Prompt, $InputText, $MaxTokens, $RequestName)
 
         $lastErrorMessage = ""
         for ($attempt = 1; $attempt -le 3; $attempt++) {
@@ -114,7 +134,7 @@ function Invoke-AIRequest {
                         model = $Model
                         messages = @(
                             @{ role = "system"; content = $Prompt }
-                            @{ role = "user"; content = "Diff:`n$DiffText" }
+                            @{ role = "user"; content = $InputText }
                         )
                         max_tokens = $MaxTokens
                         reasoning = @{ enabled = $false }
@@ -165,10 +185,10 @@ function Invoke-AIRequest {
 
     $jobs = @()
     if ($NeedsCommitMessage) {
-        $jobs += Start-Job -ScriptBlock $jobScript -ArgumentList $apiKey, $model, $commitPrompt, $Diff, 120, "commit message"
+        $jobs += Start-Job -ScriptBlock $jobScript -ArgumentList $apiKey, $model, $commitPrompt, $requestInput, 120, "commit message"
     }
-    $jobs += Start-Job -ScriptBlock $jobScript -ArgumentList $apiKey, $model, $titlePrompt, $Diff, 120, "PR title"
-    $jobs += Start-Job -ScriptBlock $jobScript -ArgumentList $apiKey, $model, $descriptionPrompt, $Diff, 1200, "PR description"
+    $jobs += Start-Job -ScriptBlock $jobScript -ArgumentList $apiKey, $model, $titlePrompt, $requestInput, 120, "PR title"
+    $jobs += Start-Job -ScriptBlock $jobScript -ArgumentList $apiKey, $model, $descriptionPrompt, $requestInput, 1200, "PR description"
     Debug-Log "Started $($jobs.Count) AI request job(s)"
 
     Wait-Job -Job $jobs | Out-Null
@@ -306,7 +326,7 @@ if ($Update) {
         exit 1
     }
 
-    $openPr = gh pr list --head $currentBranch --state open --json number,title,url --jq '.[0]'
+    $openPr = gh pr list --head $currentBranch --state open --json number,title,body,url --jq '.[0]'
     Debug-Log "Open PR check result: $openPr"
     if (-not $openPr -or $openPr -eq '' -or $openPr -eq 'null') {
         Write-Error "No open PR found for branch '$currentBranch'. Create a PR first or run without -Update."
@@ -315,6 +335,10 @@ if ($Update) {
 
     $prData = $openPr | ConvertFrom-Json
     $prNumber = $prData.number
+    $currentPrTitle = [string]$prData.title
+    $currentPrDescription = [string]$prData.body
+    Debug-Log "Current PR title length: $($currentPrTitle.Length)"
+    Debug-Log "Current PR description length: $($currentPrDescription.Length)"
 
     Write-Host "Uncommitted changes detected:" -ForegroundColor Yellow
     git status --short
@@ -348,7 +372,7 @@ if ($Update) {
     }
 
     Write-Host "Generating updated commit message and PR details with AI..." -ForegroundColor Cyan
-    $aiResult = Invoke-AIRequest -Diff $combinedDiff -NeedsCommitMessage $true
+    $aiResult = Invoke-AIRequest -Diff $combinedDiff -NeedsCommitMessage $true -CurrentPrTitle $currentPrTitle -CurrentPrDescription $currentPrDescription
 
     $commitMessage = $aiResult.'commit-message'
     $title = $aiResult.title
