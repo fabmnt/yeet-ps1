@@ -2,6 +2,8 @@ param(
     [switch]$DebugMode,
     [Alias("m")]
     [switch]$Merge,
+    [Alias("u")]
+    [switch]$Update,
     [Alias("h")]
     [switch]$Help
 )
@@ -12,16 +14,18 @@ function Show-Help {
     Write-Host ""
     Write-Host "yeet - Git PR Creator CLI" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "Usage: yeet [-DebugMode] [-Merge] [-Help]" -ForegroundColor White
+    Write-Host "Usage: yeet [-DebugMode] [-Merge] [-Update] [-Help]" -ForegroundColor White
     Write-Host ""
     Write-Host "Options:" -ForegroundColor Yellow
     Write-Host "  -DebugMode, -D          Enable debug output" -ForegroundColor White
     Write-Host "  -Merge, -m              Merge an existing PR to base branch" -ForegroundColor White
+    Write-Host "  -Update, -u             Update existing PR from current branch changes" -ForegroundColor White
     Write-Host "  -Help, -h               Show this help message" -ForegroundColor White
     Write-Host ""
     Write-Host "Description:" -ForegroundColor Yellow
     Write-Host "  Creates PRs with AI-generated commit messages, titles, and descriptions." -ForegroundColor White
     Write-Host "  With -Merge: merges the current branch PR and updates local base branch." -ForegroundColor White
+    Write-Host "  With -Update: commits uncommitted changes and updates open PR title/body." -ForegroundColor White
     Write-Host ""
     exit 0
 }
@@ -48,35 +52,15 @@ if (-not $apiKey) {
     exit 1
 }
 
-$ghAuth = gh auth status 2>&1
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "GitHub CLI is not authenticated. Please run 'gh auth login' first."
+if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
+    Write-Error "GitHub CLI ('gh') is not installed or not available on PATH. Install it from https://cli.github.com/ and try again."
     exit 1
 }
 
-function Get-CleanContent {
-    param([string]$Content)
-    $Content = $Content -replace '(?i)^(?:here(?:''s| is) (?:the |your )?(?:commit message|message|title|description):?\s*)', ''
-    $Content = $Content -replace '^```json\s*|```$', ''
-    $Content.Trim()
-}
-
-function Get-ObjectPropertyValue {
-    param(
-        [Parameter(Mandatory = $true)]
-        $Object,
-        [Parameter(Mandatory = $true)]
-        [string[]]$Names
-    )
-
-    foreach ($name in $Names) {
-        $prop = $Object.PSObject.Properties[$name]
-        if ($prop -and $prop.Value) {
-            return [string]$prop.Value
-        }
-    }
-
-    return $null
+gh auth status 2>&1 | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "GitHub CLI is not authenticated. Please run 'gh auth login' first."
+    exit 1
 }
 
 function Get-GeneratedBranchName {
@@ -93,97 +77,133 @@ function Get-GeneratedBranchName {
 function Invoke-AIRequest {
     param([string]$Diff, [bool]$NeedsCommitMessage)
 
-    $prompt = if ($NeedsCommitMessage) {
-        "Return ONLY a JSON object with no markdown formatting. Properties:
-- commit-message: A concise conventional commit message (max 72 chars)
-- title: A short PR title (max 72 chars)  
-- description: A professional PR description with this structure:
-  1. A brief summary of what was changed and why
-  2. A bullet list of key changes
-  3. Any important implementation details or considerations
+    $model = "nvidia/nemotron-3-super-120b-a12b:free"
+    $titlePrompt = "Generate a pull request title from the diff. Return only the title text, max 72 characters, no markdown, no quotes."
+    $descriptionPrompt = "Generate a pull request description in markdown from the diff. Use sections: ## Summary, ## Changes (bullet list), ## Notes. Return only the description body."
+    $commitPrompt = "Generate a git commit message from the diff. Return only one line in conventional commits format and max 72 characters."
 
-Example: {""commit-message"": ""fix: resolve image navigation bug"", ""title"": ""Fix image navigation in ExecutionFlowCard"", ""description"": ""## Summary\nFixed the image navigation behavior to properly track and display execution images.\n\n## Changes\n- Added auto-follow state for latest image tracking\n- Fixed navigation handlers for previous/next buttons\n- Removed unnecessary image array reversal\n\n## Notes\nThe auto-follow feature ensures users stay on the latest image during execution while allowing manual navigation away from it.""}"
-    } else {
-        "Return ONLY a JSON object with no markdown formatting. Properties:
-- title: A short PR title (max 72 chars)
-- description: A professional PR description with this structure:
-  1. A brief summary of what was changed and why
-  2. A bullet list of key changes
-  3. Any important implementation details or considerations
+    $jobScript = {
+        param($ApiKey, $Model, $Prompt, $DiffText, $MaxTokens, $RequestName)
 
-Example: {""title"": ""Fix image navigation in ExecutionFlowCard"", ""description"": ""## Summary\nFixed the image navigation behavior to properly track and display execution images.\n\n## Changes\n- Added auto-follow state for latest image tracking\n- Fixed navigation handlers for previous/next buttons\n- Removed unnecessary image array reversal\n\n## Notes\nThe auto-follow feature ensures users stay on the latest image during execution while allowing manual navigation away from it.""}"
-    }
+        $lastErrorMessage = ""
+        for ($attempt = 1; $attempt -le 3; $attempt++) {
+            try {
+                $response = Invoke-RestMethod -Uri "https://openrouter.ai/api/v1/chat/completions" `
+                    -Method POST `
+                    -Headers @{
+                        "Authorization" = "Bearer $ApiKey"
+                        "Content-Type" = "application/json"
+                    } `
+                    -Body (@{
+                        model = $Model
+                        messages = @(
+                            @{ role = "system"; content = $Prompt }
+                            @{ role = "user"; content = "Diff:`n$DiffText" }
+                        )
+                        max_tokens = $MaxTokens
+                        reasoning = @{ enabled = $false }
+                    } | ConvertTo-Json -Depth 10 -Compress)
 
-    $response = Invoke-RestMethod -Uri "https://openrouter.ai/api/v1/chat/completions" `
-        -Method POST `
-        -Headers @{
-            "Authorization" = "Bearer $apiKey"
-            "Content-Type" = "application/json"
-        } `
-        -Body (@{
-            model = "openrouter/free"
-            messages = @(
-                @{ role = "system"; content = $prompt }
-                @{ role = "user"; content = "Diff:`n$Diff" }
-            )
-            max_tokens = 2000
-            reasoning = @{ include = $false }
-        } | ConvertTo-Json -Depth 10 -Compress)
+                $message = $response.choices[0].message
+                $output = ""
 
-    $message = $response.choices[0].message
-    $rawContent = if ($message.content) { $message.content } else { "" }
-    $cleanContent = Get-CleanContent $rawContent
-    
-    $jsonMatch = $cleanContent -match '\{[\s\S]*"[^"]+"\s*:\s*"[^"]*"[\s\S]*\}'
-    if ($jsonMatch) {
-        $cleanContent = $Matches[0]
-    } elseif ($cleanContent -match '\{[\s\S]*\}') {
-        $cleanContent = $Matches[0]
-    }
-    
-    $cleanContent = $cleanContent -replace '^[^{]*', '' -replace '}[^}]*$', '}'
-    
-    Debug-Log "Cleaned content: $cleanContent"
+                if ($message -and $message.content -is [string]) {
+                    $output = $message.content.Trim()
+                } elseif ($message -and $message.content -is [System.Collections.IEnumerable]) {
+                    $parts = @()
+                    foreach ($part in $message.content) {
+                        if ($part -is [string]) {
+                            $parts += $part
+                        } elseif ($part.PSObject.Properties["text"] -and $part.text) {
+                            $parts += [string]$part.text
+                        }
+                    }
+                    $output = ($parts -join "`n").Trim()
+                } elseif ($response.choices[0].text) {
+                    $output = ([string]$response.choices[0].text).Trim()
+                }
 
-    try {
-        $json = $cleanContent | ConvertFrom-Json
-
-        $title = Get-ObjectPropertyValue -Object $json -Names @("title", "pr-title", "pr_title", "prTitle", "name")
-        $description = Get-ObjectPropertyValue -Object $json -Names @("description", "body", "pr-description", "pr_description", "details")
-        $commitMessage = if ($NeedsCommitMessage) {
-            Get-ObjectPropertyValue -Object $json -Names @("commit-message", "commit_message", "commitMessage", "commit", "message", "subject")
-        } else {
-            $null
-        }
-
-        if (-not $title -and $commitMessage) {
-            $title = ($commitMessage -replace '^[a-z]+(\([^)]+\))?!?:\s*', '').Trim()
-        }
-
-        if (-not $commitMessage -and $NeedsCommitMessage -and $title) {
-            $commitMessage = "chore: $title"
-        }
-
-        if (-not $title) {
-            $title = "Update project changes"
-        }
-
-        if (-not $description) {
-            $description = "## Summary`nUpdated code based on the current diff.`n`n## Changes`n- Applied the updates reflected in this branch.`n`n## Notes`nGenerated fallback description because AI output was incomplete."
-        }
-
-        if ($NeedsCommitMessage -and $commitMessage.Length -gt 72) {
-            $commitMessage = $commitMessage.Substring(0, 72).Trim()
+                if ($output) {
+                    return [PSCustomObject]@{
+                        ok = $true
+                        request = $RequestName
+                        output = $output
+                        attempts = $attempt
+                        error = ""
+                    }
+                }
+                $lastErrorMessage = "Empty AI response"
+            } catch {
+                $lastErrorMessage = $_.Exception.Message
+            }
         }
 
         return [PSCustomObject]@{
-            'commit-message' = $commitMessage
-            title = $title
-            description = $description
+            ok = $false
+            request = $RequestName
+            output = ""
+            attempts = 3
+            error = $lastErrorMessage
         }
-    } catch {
-        Write-Error "Failed to parse AI response as JSON: $cleanContent"
+    }
+
+    $jobs = @()
+    if ($NeedsCommitMessage) {
+        $jobs += Start-Job -ScriptBlock $jobScript -ArgumentList $apiKey, $model, $commitPrompt, $Diff, 120, "commit message"
+    }
+    $jobs += Start-Job -ScriptBlock $jobScript -ArgumentList $apiKey, $model, $titlePrompt, $Diff, 120, "PR title"
+    $jobs += Start-Job -ScriptBlock $jobScript -ArgumentList $apiKey, $model, $descriptionPrompt, $Diff, 1200, "PR description"
+
+    Wait-Job -Job $jobs | Out-Null
+    $results = @()
+    foreach ($job in $jobs) {
+        $jobOutput = Receive-Job -Job $job -ErrorAction SilentlyContinue
+        if ($jobOutput -is [System.Array]) {
+            $jobOutput = $jobOutput[-1]
+        }
+
+        $results += [PSCustomObject]@{
+            id = $job.Id
+            state = $job.State
+            output = $jobOutput
+        }
+    }
+    $jobs | Remove-Job -Force
+
+    $failedRequests = @($results | Where-Object { $_.state -ne "Completed" -or -not $_.output -or -not $_.output.ok })
+    if ($failedRequests.Count -gt 0) {
+        $failedDetails = ($failedRequests | ForEach-Object {
+            $name = if ($_.output -and $_.output.request) { $_.output.request } else { "unknown request" }
+            $errorMessage = if ($_.output -and $_.output.error) { $_.output.error } else { "No error response captured" }
+            "$name ($errorMessage)"
+        }) -join "; "
+
+        Write-Error "AI request failed after 3 retries: $failedDetails"
         exit 1
+    }
+
+    $resultIndex = 0
+    $commitMessage = $null
+    if ($NeedsCommitMessage) {
+        $commitMessage = [string]$results[$resultIndex].output.output
+        if ($commitMessage.Length -gt 72) {
+            $commitMessage = $commitMessage.Substring(0, 72).Trim()
+        }
+        $resultIndex++
+    }
+
+    $title = [string]$results[$resultIndex].output.output
+    $resultIndex++
+    $description = [string]$results[$resultIndex].output.output
+
+    Debug-Log "Generated commit message length: $($commitMessage.Length)"
+    Debug-Log "Generated title length: $($title.Length)"
+    Debug-Log "Generated description length: $($description.Length)"
+
+    return [PSCustomObject]@{
+        'commit-message' = $commitMessage
+        title = $title
+        description = $description
     }
 }
 
@@ -247,6 +267,90 @@ if ($Merge) {
 
     Write-Host ""
     Write-Host "Merge complete!" -ForegroundColor Green
+    exit 0
+}
+
+if ($Update) {
+    if ($Merge) {
+        Write-Error "-Merge and -Update cannot be used together"
+        exit 1
+    }
+
+    if (-not $hasUncommittedChanges) {
+        Write-Error "No uncommitted changes found. Nothing to update."
+        exit 1
+    }
+
+    if ($currentBranch -eq $defaultBranch) {
+        Write-Error "-Update cannot be used on the default branch '$defaultBranch'."
+        exit 1
+    }
+
+    $openPr = gh pr list --head $currentBranch --state open --json number,title,url --jq '.[0]'
+    Debug-Log "Open PR check result: $openPr"
+    if (-not $openPr -or $openPr -eq '' -or $openPr -eq 'null') {
+        Write-Error "No open PR found for branch '$currentBranch'. Create a PR first or run without -Update."
+        exit 1
+    }
+
+    $prData = $openPr | ConvertFrom-Json
+    $prNumber = $prData.number
+
+    Write-Host "Uncommitted changes detected:" -ForegroundColor Yellow
+    git status --short
+    Write-Host ""
+
+    $diff = git diff --staged
+    $unstagedDiff = git diff
+    $combinedDiff = if ($diff) { $diff + "`n" + $unstagedDiff } else { $unstagedDiff }
+    Debug-Log "Combined diff length: $($combinedDiff.Length) characters"
+
+    Write-Host "Generating updated commit message and PR details with AI..." -ForegroundColor Cyan
+    $aiResult = Invoke-AIRequest -Diff $combinedDiff -NeedsCommitMessage $true
+
+    $commitMessage = $aiResult.'commit-message'
+    $title = $aiResult.title
+    $description = $aiResult.description
+
+    if (-not $commitMessage -or -not $title) {
+        Write-Error "AI returned incomplete response"
+        exit 1
+    }
+
+    Write-Host ""
+    Write-Host "=== Update Preview ===" -ForegroundColor Cyan
+    Write-Host "PR: #$prNumber ($($prData.url))" -ForegroundColor White
+    Write-Host "Branch: $currentBranch" -ForegroundColor White
+    Write-Host "Commit: $commitMessage" -ForegroundColor White
+    Write-Host "" 
+    Write-Host "PR Title: $title" -ForegroundColor Yellow
+    Write-Host "PR Description: $description" -ForegroundColor White
+    Write-Host ""
+
+    Write-Host "Press ENTER to commit, push, and update PR; ESCAPE to cancel..." -ForegroundColor Magenta
+    $key = $Host.UI.RawUI.ReadKey([System.Management.Automation.Host.ReadKeyOptions]::NoEcho -bor [System.Management.Automation.Host.ReadKeyOptions]::IncludeKeyDown)
+
+    if ($key.VirtualKeyCode -eq 27) {
+        Write-Host ""
+        Write-Host "Cancelled. No commit, push, or PR update performed." -ForegroundColor Red
+        exit 0
+    }
+
+    Write-Host ""
+    Write-Host "Committing changes..." -ForegroundColor Green
+    git add .
+    git commit -m $commitMessage
+
+    Write-Host "Pushing changes to remote branch..." -ForegroundColor Green
+    git push origin $currentBranch
+
+    Write-Host "Updating PR #$prNumber..." -ForegroundColor Green
+    gh pr edit $prNumber --title $title --body $description
+
+    Write-Host ""
+    Write-Host "PR updated successfully!" -ForegroundColor Green
+    Write-Host "Updated PR Title: $title" -ForegroundColor Yellow
+    Write-Host "PR URL: $($prData.url)" -ForegroundColor Cyan
     exit 0
 }
 
