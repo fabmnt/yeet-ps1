@@ -2,10 +2,35 @@ param(
     [string]$BranchPrefix = "feat",
     [switch]$DebugMode,
     [Alias("m")]
-    [switch]$Merge
+    [switch]$Merge,
+    [Alias("h")]
+    [switch]$Help
 )
 
 $ErrorActionPreference = "Stop"
+
+function Show-Help {
+    Write-Host ""
+    Write-Host "yeet - Git PR Creator CLI" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "Usage: yeet [-BranchPrefix <prefix>] [-DebugMode] [-Merge] [-Help]" -ForegroundColor White
+    Write-Host ""
+    Write-Host "Options:" -ForegroundColor Yellow
+    Write-Host "  -BranchPrefix <prefix>  Branch prefix for new branches (default: 'feat')" -ForegroundColor White
+    Write-Host "  -DebugMode, -D          Enable debug output" -ForegroundColor White
+    Write-Host "  -Merge, -m              Merge an existing PR to base branch" -ForegroundColor White
+    Write-Host "  -Help, -h               Show this help message" -ForegroundColor White
+    Write-Host ""
+    Write-Host "Description:" -ForegroundColor Yellow
+    Write-Host "  Creates PRs with AI-generated commit messages, titles, and descriptions." -ForegroundColor White
+    Write-Host "  With -Merge: merges the current branch PR and updates local base branch." -ForegroundColor White
+    Write-Host ""
+    exit 0
+}
+
+if ($Help) {
+    Show-Help
+}
 
 function Debug-Log {
     param([string]$Message)
@@ -25,10 +50,14 @@ if (-not $apiKey) {
     exit 1
 }
 
+$ghAuth = gh auth status 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "GitHub CLI is not authenticated. Please run 'gh auth login' first."
+    exit 1
+}
+
 function Get-CleanContent {
     param([string]$Content)
-    $Content = $Content -replace '(?s)<(?:think|analysis|reasoning)>.*?</(?:think|analysis|reasoning)>', ''
-    $Content = $Content -replace '(?s)<scratchpad>.*?</scratchpad>', ''
     $Content = $Content -replace '(?i)^(?:here(?:''s| is) (?:the |your )?(?:commit message|message|title|description):?\s*)', ''
     $Content = $Content -replace '^```json\s*|```$', ''
     $Content.Trim()
@@ -71,15 +100,21 @@ Example: {""title"": ""Fix image navigation in ExecutionFlowCard"", ""descriptio
                 @{ role = "user"; content = "Diff:`n$Diff" }
             )
             max_tokens = 2000
+            reasoning = @{ include = $false }
         } | ConvertTo-Json -Depth 10 -Compress)
 
     $message = $response.choices[0].message
-    $rawContent = if ($message.content) { $message.content } elseif ($message.reasoning) { $message.reasoning } else { "" }
+    $rawContent = if ($message.content) { $message.content } else { "" }
     $cleanContent = Get-CleanContent $rawContent
     
-    if ($cleanContent -match '\{[\s\S]*\}') {
+    $jsonMatch = $cleanContent -match '\{[\s\S]*"[^"]+"\s*:\s*"[^"]*"[\s\S]*\}'
+    if ($jsonMatch) {
+        $cleanContent = $Matches[0]
+    } elseif ($cleanContent -match '\{[\s\S]*\}') {
         $cleanContent = $Matches[0]
     }
+    
+    $cleanContent = $cleanContent -replace '^[^{]*', '' -replace '}[^}]*$', '}'
     
     Debug-Log "Cleaned content: $cleanContent"
 
