@@ -4,6 +4,8 @@ param(
     [switch]$Merge,
     [Alias("u")]
     [switch]$Update,
+    [Alias("n")]
+    [switch]$New,
     [Alias("h")]
     [switch]$Help
 )
@@ -14,18 +16,20 @@ function Show-Help {
     Write-Host ""
     Write-Host "yeet - Git PR Creator CLI" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "Usage: yeet [-DebugMode] [-Merge] [-Update] [-Help]" -ForegroundColor White
+    Write-Host "Usage: yeet [-DebugMode] [-Merge] [-Update [-New]] [-Help]" -ForegroundColor White
     Write-Host ""
     Write-Host "Options:" -ForegroundColor Yellow
     Write-Host "  -DebugMode, -D          Enable debug output" -ForegroundColor White
     Write-Host "  -Merge, -m              Merge an existing PR to base branch" -ForegroundColor White
     Write-Host "  -Update, -u             Update existing PR from current branch changes" -ForegroundColor White
+    Write-Host "  -New, -n                With -Update, also refresh PR title/description" -ForegroundColor White
     Write-Host "  -Help, -h               Show this help message" -ForegroundColor White
     Write-Host ""
     Write-Host "Description:" -ForegroundColor Yellow
     Write-Host "  Creates PRs with AI-generated commit messages, titles, and descriptions." -ForegroundColor White
     Write-Host "  With -Merge: merges the current branch PR and updates local base branch." -ForegroundColor White
-    Write-Host "  With -Update: commits uncommitted changes and updates open PR title/body." -ForegroundColor White
+    Write-Host "  With -Update: commits and pushes uncommitted changes to the open PR branch." -ForegroundColor White
+    Write-Host "  With -Update -New: also regenerates and updates open PR title/body." -ForegroundColor White
     Write-Host ""
     exit 0
 }
@@ -85,6 +89,7 @@ function Invoke-AIRequest {
     param(
         [string]$Diff,
         [bool]$NeedsCommitMessage,
+        [bool]$NeedsPrDetails = $true,
         [string]$CurrentPrTitle = "",
         [string]$CurrentPrDescription = ""
     )
@@ -187,8 +192,10 @@ function Invoke-AIRequest {
     if ($NeedsCommitMessage) {
         $jobs += Start-Job -ScriptBlock $jobScript -ArgumentList $apiKey, $model, $commitPrompt, $requestInput, 120, "commit message"
     }
-    $jobs += Start-Job -ScriptBlock $jobScript -ArgumentList $apiKey, $model, $titlePrompt, $requestInput, 120, "PR title"
-    $jobs += Start-Job -ScriptBlock $jobScript -ArgumentList $apiKey, $model, $descriptionPrompt, $requestInput, 1200, "PR description"
+    if ($NeedsPrDetails) {
+        $jobs += Start-Job -ScriptBlock $jobScript -ArgumentList $apiKey, $model, $titlePrompt, $requestInput, 120, "PR title"
+        $jobs += Start-Job -ScriptBlock $jobScript -ArgumentList $apiKey, $model, $descriptionPrompt, $requestInput, 1200, "PR description"
+    }
     Debug-Log "Started $($jobs.Count) AI request job(s)"
 
     Wait-Job -Job $jobs | Out-Null
@@ -230,13 +237,19 @@ function Invoke-AIRequest {
         $resultIndex++
     }
 
-    $title = [string]$results[$resultIndex].output.output
-    $resultIndex++
-    $description = [string]$results[$resultIndex].output.output
+    $title = $null
+    $description = $null
+    if ($NeedsPrDetails) {
+        $title = [string]$results[$resultIndex].output.output
+        $resultIndex++
+        $description = [string]$results[$resultIndex].output.output
+    }
 
     Debug-Log "Generated commit message length: $($commitMessage.Length)"
-    Debug-Log "Generated title length: $($title.Length)"
-    Debug-Log "Generated description length: $($description.Length)"
+    if ($NeedsPrDetails) {
+        Debug-Log "Generated title length: $($title.Length)"
+        Debug-Log "Generated description length: $($description.Length)"
+    }
 
     return [PSCustomObject]@{
         'commit-message' = $commitMessage
@@ -263,6 +276,11 @@ if (-not $defaultBranch) {
     $defaultBranch = "main"
 }
 Debug-Log "Default branch: $defaultBranch"
+
+if ($New -and -not $Update) {
+    Write-Error "-New can only be used together with -Update"
+    exit 1
+}
 
 if ($Merge) {
     if ($hasUncommittedChanges) {
@@ -371,14 +389,18 @@ if ($Update) {
         exit 1
     }
 
-    Write-Host "Generating updated commit message and PR details with AI..." -ForegroundColor Cyan
-    $aiResult = Invoke-AIRequest -Diff $combinedDiff -NeedsCommitMessage $true -CurrentPrTitle $currentPrTitle -CurrentPrDescription $currentPrDescription
+    if ($New) {
+        Write-Host "Generating updated commit message and PR details with AI..." -ForegroundColor Cyan
+    } else {
+        Write-Host "Generating updated commit message with AI..." -ForegroundColor Cyan
+    }
+    $aiResult = Invoke-AIRequest -Diff $combinedDiff -NeedsCommitMessage $true -NeedsPrDetails $New -CurrentPrTitle $currentPrTitle -CurrentPrDescription $currentPrDescription
 
     $commitMessage = $aiResult.'commit-message'
-    $title = $aiResult.title
-    $description = $aiResult.description
+    $title = if ($New) { $aiResult.title } else { $currentPrTitle }
+    $description = if ($New) { $aiResult.description } else { $currentPrDescription }
 
-    if (-not $commitMessage -or -not $title) {
+    if (-not $commitMessage -or ($New -and -not $title)) {
         Write-Error "AI returned incomplete response"
         exit 1
     }
@@ -389,11 +411,20 @@ if ($Update) {
     Write-Host "Branch: $currentBranch" -ForegroundColor White
     Write-Host "Commit: $commitMessage" -ForegroundColor White
     Write-Host "" 
-    Write-Host "PR Title: $title" -ForegroundColor Yellow
-    Write-Host "PR Description: $description" -ForegroundColor White
+    if ($New) {
+        Write-Host "PR Title: $title" -ForegroundColor Yellow
+        Write-Host "PR Description: $description" -ForegroundColor White
+    } else {
+        Write-Host "PR Title: (unchanged) $title" -ForegroundColor Yellow
+        Write-Host "PR Description: (unchanged) $description" -ForegroundColor White
+    }
     Write-Host ""
 
-    Write-Host "Press ENTER to commit, push, and update PR; ESCAPE to cancel..." -ForegroundColor Magenta
+    if ($New) {
+        Write-Host "Press ENTER to commit, push, and update PR; ESCAPE to cancel..." -ForegroundColor Magenta
+    } else {
+        Write-Host "Press ENTER to commit and push; ESCAPE to cancel..." -ForegroundColor Magenta
+    }
     $key = $Host.UI.RawUI.ReadKey([System.Management.Automation.Host.ReadKeyOptions]::NoEcho -bor [System.Management.Automation.Host.ReadKeyOptions]::IncludeKeyDown)
 
     if ($key.VirtualKeyCode -eq 27) {
@@ -413,15 +444,28 @@ if ($Update) {
     Debug-Log "Pushing '$currentBranch' to origin"
     git push origin $currentBranch
 
-    Write-Host "Updating PR #$prNumber..." -ForegroundColor Green
-    Debug-Log "Editing PR #$prNumber title/body"
-    gh pr edit $prNumber --title $title --body $description
+    if ($New) {
+        Write-Host "Updating PR #$prNumber..." -ForegroundColor Green
+        Debug-Log "Editing PR #$prNumber title/body"
+        gh pr edit $prNumber --title $title --body $description
+    } else {
+        Debug-Log "Skipping PR title/description update (use -New with -Update to enable)"
+    }
 
     Write-Host ""
-    Write-Host "PR updated successfully!" -ForegroundColor Green
+    if ($New) {
+        Write-Host "PR updated successfully!" -ForegroundColor Green
+    } else {
+        Write-Host "PR commit pushed successfully!" -ForegroundColor Green
+    }
     Write-Host "New Commit Message: $commitMessage" -ForegroundColor White
-    Write-Host "Updated PR Title: $title" -ForegroundColor Yellow
-    Write-Host "Updated PR Description: $description" -ForegroundColor White
+    if ($New) {
+        Write-Host "Updated PR Title: $title" -ForegroundColor Yellow
+        Write-Host "Updated PR Description: $description" -ForegroundColor White
+    } else {
+        Write-Host "PR Title: (unchanged) $title" -ForegroundColor Yellow
+        Write-Host "PR Description: (unchanged) $description" -ForegroundColor White
+    }
     Write-Host "PR URL: $($prData.url)" -ForegroundColor Cyan
     exit 0
 }
