@@ -1,11 +1,34 @@
 param(
-    [string]$BranchPrefix = "feat",
     [switch]$DebugMode,
     [Alias("m")]
-    [switch]$Merge
+    [switch]$Merge,
+    [Alias("h")]
+    [switch]$Help
 )
 
 $ErrorActionPreference = "Stop"
+
+function Show-Help {
+    Write-Host ""
+    Write-Host "yeet - Git PR Creator CLI" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "Usage: yeet [-DebugMode] [-Merge] [-Help]" -ForegroundColor White
+    Write-Host ""
+    Write-Host "Options:" -ForegroundColor Yellow
+    Write-Host "  -DebugMode, -D          Enable debug output" -ForegroundColor White
+    Write-Host "  -Merge, -m              Merge an existing PR to base branch" -ForegroundColor White
+    Write-Host "  -Help, -h               Show this help message" -ForegroundColor White
+    Write-Host ""
+    Write-Host "Description:" -ForegroundColor Yellow
+    Write-Host "  Creates PRs with AI-generated commit messages, titles, and descriptions." -ForegroundColor White
+    Write-Host "  With -Merge: merges the current branch PR and updates local base branch." -ForegroundColor White
+    Write-Host ""
+    exit 0
+}
+
+if ($Help) {
+    Show-Help
+}
 
 function Debug-Log {
     param([string]$Message)
@@ -25,13 +48,46 @@ if (-not $apiKey) {
     exit 1
 }
 
+$ghAuth = gh auth status 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "GitHub CLI is not authenticated. Please run 'gh auth login' first."
+    exit 1
+}
+
 function Get-CleanContent {
     param([string]$Content)
-    $Content = $Content -replace '(?s)<(?:think|analysis|reasoning)>.*?</(?:think|analysis|reasoning)>', ''
-    $Content = $Content -replace '(?s)<scratchpad>.*?</scratchpad>', ''
     $Content = $Content -replace '(?i)^(?:here(?:''s| is) (?:the |your )?(?:commit message|message|title|description):?\s*)', ''
     $Content = $Content -replace '^```json\s*|```$', ''
     $Content.Trim()
+}
+
+function Get-ObjectPropertyValue {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Object,
+        [Parameter(Mandatory = $true)]
+        [string[]]$Names
+    )
+
+    foreach ($name in $Names) {
+        $prop = $Object.PSObject.Properties[$name]
+        if ($prop -and $prop.Value) {
+            return [string]$prop.Value
+        }
+    }
+
+    return $null
+}
+
+function Get-GeneratedBranchName {
+    param([string]$Title)
+
+    $branchName = ($Title -replace '\s+', '-' -replace '[^a-zA-Z0-9\-]', '' -replace '-{2,}', '-').ToLower().Trim('-')
+    if (-not $branchName) {
+        $branchName = "update-changes"
+    }
+
+    return $branchName
 }
 
 function Invoke-AIRequest {
@@ -71,21 +127,60 @@ Example: {""title"": ""Fix image navigation in ExecutionFlowCard"", ""descriptio
                 @{ role = "user"; content = "Diff:`n$Diff" }
             )
             max_tokens = 2000
+            reasoning = @{ include = $false }
         } | ConvertTo-Json -Depth 10 -Compress)
 
     $message = $response.choices[0].message
-    $rawContent = if ($message.content) { $message.content } elseif ($message.reasoning) { $message.reasoning } else { "" }
+    $rawContent = if ($message.content) { $message.content } else { "" }
     $cleanContent = Get-CleanContent $rawContent
     
-    if ($cleanContent -match '\{[\s\S]*\}') {
+    $jsonMatch = $cleanContent -match '\{[\s\S]*"[^"]+"\s*:\s*"[^"]*"[\s\S]*\}'
+    if ($jsonMatch) {
+        $cleanContent = $Matches[0]
+    } elseif ($cleanContent -match '\{[\s\S]*\}') {
         $cleanContent = $Matches[0]
     }
+    
+    $cleanContent = $cleanContent -replace '^[^{]*', '' -replace '}[^}]*$', '}'
     
     Debug-Log "Cleaned content: $cleanContent"
 
     try {
         $json = $cleanContent | ConvertFrom-Json
-        return $json
+
+        $title = Get-ObjectPropertyValue -Object $json -Names @("title", "pr-title", "pr_title", "prTitle", "name")
+        $description = Get-ObjectPropertyValue -Object $json -Names @("description", "body", "pr-description", "pr_description", "details")
+        $commitMessage = if ($NeedsCommitMessage) {
+            Get-ObjectPropertyValue -Object $json -Names @("commit-message", "commit_message", "commitMessage", "commit", "message", "subject")
+        } else {
+            $null
+        }
+
+        if (-not $title -and $commitMessage) {
+            $title = ($commitMessage -replace '^[a-z]+(\([^)]+\))?!?:\s*', '').Trim()
+        }
+
+        if (-not $commitMessage -and $NeedsCommitMessage -and $title) {
+            $commitMessage = "chore: $title"
+        }
+
+        if (-not $title) {
+            $title = "Update project changes"
+        }
+
+        if (-not $description) {
+            $description = "## Summary`nUpdated code based on the current diff.`n`n## Changes`n- Applied the updates reflected in this branch.`n`n## Notes`nGenerated fallback description because AI output was incomplete."
+        }
+
+        if ($NeedsCommitMessage -and $commitMessage.Length -gt 72) {
+            $commitMessage = $commitMessage.Substring(0, 72).Trim()
+        }
+
+        return [PSCustomObject]@{
+            'commit-message' = $commitMessage
+            title = $title
+            description = $description
+        }
     } catch {
         Write-Error "Failed to parse AI response as JSON: $cleanContent"
         exit 1
@@ -181,16 +276,8 @@ if ($hasUncommittedChanges) {
     Debug-Log "PR title: $title"
     Debug-Log "PR description: $description"
 
-    $branchName = $title -replace '\s+', '-' -replace '[^a-zA-Z0-9\-]', ''
-    $branchName = "$BranchPrefix/$branchName".ToLower()
+    $branchName = Get-GeneratedBranchName -Title $title
     Debug-Log "Branch name: $branchName"
-
-    Write-Host "Creating branch: $branchName" -ForegroundColor Green
-    git checkout -b $branchName
-
-    Write-Host "Committing changes..." -ForegroundColor Green
-    git add .
-    git commit -m $commitMessage
 } else {
     Write-Host "No uncommitted changes." -ForegroundColor Yellow
     Write-Host "Current branch: $currentBranch" -ForegroundColor Cyan
@@ -261,6 +348,15 @@ if ($key.VirtualKeyCode -eq 27) {
 Write-Host ""
 Write-Host "Creating PR..." -ForegroundColor Green
 Debug-Log "Creating PR with title: '$title' on base: $defaultBranch"
+
+if ($hasUncommittedChanges) {
+    Write-Host "Creating branch: $branchName" -ForegroundColor Green
+    git checkout -b $branchName
+
+    Write-Host "Committing changes..." -ForegroundColor Green
+    git add .
+    git commit -m $commitMessage
+}
 
 Write-Host "Pushing branch to remote..." -ForegroundColor Green
 git push -u origin $branchName
