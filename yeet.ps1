@@ -108,7 +108,7 @@ function Invoke-AIRequest {
     } else {
         "Generate a pull request description in markdown from the diff. Use sections: ## Summary, ## Changes (bullet list), ## Notes. Return only the description body."
     }
-    $commitPrompt = "Generate a git commit message from the diff. Return only one line in conventional commits format and max 72 characters."
+    $commitPrompt = "Generate a git commit message from the diff. Keep it brief and to the point (prefer 30-55 characters, hard max 72). Return only one line in conventional commits format, no markdown, no quotes."
 
     Debug-Log "Using model: $model"
 
