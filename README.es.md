@@ -19,6 +19,17 @@ El punto de entrada del comando es `yeet.cmd`, que invoca `yeet.ps1`.
 Opcional:
 - `OPENROUTER_MODEL_ID` (o `OPENROUTER_MODEL`) para sobrescribir el modelo por defecto
 
+## Instalacion
+
+Instalar desde [PowerShell Gallery](https://www.powershellgallery.com/packages/yeet):
+
+```powershell
+Install-Module -Name yeet -Scope CurrentUser
+Import-Module yeet
+```
+
+Agrega `Import-Module yeet` a tu perfil de PowerShell para carga automatica.
+
 ## Uso
 
 ```powershell
