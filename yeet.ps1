@@ -419,7 +419,9 @@ if ($Update) {
 
     Write-Host ""
     Write-Host "PR updated successfully!" -ForegroundColor Green
+    Write-Host "New Commit Message: $commitMessage" -ForegroundColor White
     Write-Host "Updated PR Title: $title" -ForegroundColor Yellow
+    Write-Host "Updated PR Description: $description" -ForegroundColor White
     Write-Host "PR URL: $($prData.url)" -ForegroundColor Cyan
     exit 0
 }
