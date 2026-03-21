@@ -9,6 +9,9 @@ on:
       - '.github/workflows/publish.yml'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   publish:
     runs-on: windows-latest
