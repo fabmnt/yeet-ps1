@@ -7,6 +7,7 @@ param(
     [Alias("n")]
     [switch]$New,
     [switch]$Push,
+    [switch]$Version,
     [Alias("h")]
     [switch]$Help
 )
@@ -37,6 +38,7 @@ if ($Merge) { $params['Merge'] = $true }
 if ($Update) { $params['Update'] = $true }
 if ($New) { $params['New'] = $true }
 if ($Push) { $params['Push'] = $true }
+if ($Version) { $params['Version'] = $true }
 if ($Help) { $params['Help'] = $true }
 
 yeet @params

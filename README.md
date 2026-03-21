@@ -33,7 +33,7 @@ Add `Import-Module yeet` to your PowerShell profile to auto-load.
 ## Usage
 
 ```powershell
-yeet [-DebugMode] [-Merge] [-Update [-New]] [-Push] [-Help]
+yeet [-DebugMode] [-Merge] [-Update [-New]] [-Push] [-Version] [-Help]
 ```
 
 ## CLI Arguments
@@ -62,6 +62,9 @@ yeet [-DebugMode] [-Merge] [-Update [-New]] [-Push] [-Help]
   - Generates a commit message from current changes and pushes directly without creating a PR.
   - Shows the generated commit message and waits for confirmation.
   - Cannot be combined with `-Merge` or `-Update`.
+
+- `-Version`, `-v`
+  - Shows the current version of yeet.
 
 ## Behavior (by mode)
 
@@ -117,6 +120,9 @@ yeet -m
 
 # Generate commit message and push directly (no PR)
 yeet -Push
+
+# Show version
+yeet -v
 
 # Show help
 yeet -h

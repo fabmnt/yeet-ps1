@@ -1,6 +1,6 @@
 @{
     RootModule = 'yeet.psm1'
-    ModuleVersion = '1.1.0'
+    ModuleVersion = '1.2.0'
     GUID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
     Author = 'Fabian Montoya'
     CompanyName = ''
@@ -18,7 +18,7 @@
             Tags = @('git', 'github', 'pr', 'pull-request', 'ai', 'openrouter', 'commit')
             ProjectUri = 'https://github.com/fabmnt/yeet-ps1'
             LicenseUri = 'https://github.com/fabmnt/yeet-ps1/blob/main/LICENSE'
-            ReleaseNotes = 'v1.1.0 - Added -Push parameter for direct commit and push without PR creation'
+            ReleaseNotes = 'v1.2.0 - Added -Version parameter to show current version'
         }
     }
 }

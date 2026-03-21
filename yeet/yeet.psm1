@@ -8,11 +8,13 @@ function yeet {
         [switch]$Update,
         [Alias("n")]
         [switch]$New,
-        [Alias("p")]
-        [switch]$Push,
-        [Alias("h")]
-        [switch]$Help
-    )
+    [Alias("p")]
+    [switch]$Push,
+    [Alias("v")]
+    [switch]$Version,
+    [Alias("h")]
+    [switch]$Help
+)
 
     $ErrorActionPreference = "Stop"
 
@@ -20,7 +22,7 @@ function yeet {
         Write-Host ""
         Write-Host "yeet - Git PR Creator CLI" -ForegroundColor Cyan
         Write-Host ""
-        Write-Host "Usage: yeet [-DebugMode] [-Merge] [-Update [-New]] [-Push] [-Help]" -ForegroundColor White
+        Write-Host "Usage: yeet [-DebugMode] [-Merge] [-Update [-New]] [-Push] [-Version] [-Help]" -ForegroundColor White
         Write-Host ""
         Write-Host "Options:" -ForegroundColor Yellow
         Write-Host "  -DebugMode, -D          Enable debug output" -ForegroundColor White
@@ -28,6 +30,7 @@ function yeet {
         Write-Host "  -Update, -u             Update existing PR from current branch changes" -ForegroundColor White
         Write-Host "  -New, -n                With -Update, also refresh PR title/description" -ForegroundColor White
         Write-Host "  -Push, -p               Commit and push uncommitted changes with AI-generated commit message" -ForegroundColor White
+        Write-Host "  -Version, -v            Show current version" -ForegroundColor White
         Write-Host "  -Help, -h               Show this help message" -ForegroundColor White
         Write-Host ""
         Write-Host "Description:" -ForegroundColor Yellow
@@ -37,6 +40,13 @@ function yeet {
         Write-Host "  With -Update -New: also regenerates and updates open PR title/body." -ForegroundColor White
         Write-Host "  With -Push: generates commit message and pushes directly without creating a PR." -ForegroundColor White
         Write-Host ""
+        return
+    }
+
+    if ($Version) {
+        $manifestPath = Join-Path $PSScriptRoot "yeet.psd1"
+        $manifest = Import-PowerShellDataFile -Path $manifestPath
+        Write-Host $manifest.ModuleVersion
         return
     }
 
