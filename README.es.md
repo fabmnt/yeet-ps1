@@ -43,6 +43,22 @@ Opcional:
    setx OPENROUTER_API_KEY "sk-or-v1-..."
    ```
 
+### Modelo de OpenRouter (Opcional)
+
+Por defecto, yeet usa el modelo gratuito: `nvidia/nemotron-3-super-120b-a12b:free`
+
+Para usar un modelo diferente, configura una de estas variables de entorno:
+
+```powershell
+# Opcion 1: OPENROUTER_MODEL_ID (recomendado)
+$env:OPENROUTER_MODEL_ID = "anthropic/claude-3.5-sonnet"
+
+# Opcion 2: OPENROUTER_MODEL (alternativa)
+$env:OPENROUTER_MODEL = "google/gemini-pro"
+```
+
+Encuentra modelos disponibles en [openrouter.ai/models](https://openrouter.ai/models).
+
 ## Instalacion
 
 Instalar desde [PowerShell Gallery](https://www.powershellgallery.com/packages/yeet):

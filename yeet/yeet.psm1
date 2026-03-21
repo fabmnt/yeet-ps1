@@ -8,12 +8,14 @@ function yeet {
         [switch]$Update,
         [Alias("n")]
         [switch]$New,
-    [Alias("p")]
-    [switch]$Push,
-    [Alias("v")]
-    [switch]$Version,
-    [Alias("h")]
-    [switch]$Help
+        [Alias("p")]
+        [switch]$Push,
+        [Alias("v")]
+        [switch]$Version,
+        [Alias("h")]
+        [switch]$Help,
+        [Alias("s")]
+        [switch]$Setup
 )
 
     $ErrorActionPreference = "Stop"
@@ -22,7 +24,7 @@ function yeet {
         Write-Host ""
         Write-Host "yeet - Git PR Creator CLI" -ForegroundColor Cyan
         Write-Host ""
-        Write-Host "Usage: yeet [-DebugMode] [-Merge] [-Update [-New]] [-Push] [-Version] [-Help]" -ForegroundColor White
+        Write-Host "Usage: yeet [-DebugMode] [-Merge] [-Update [-New]] [-Push] [-Setup] [-Version] [-Help]" -ForegroundColor White
         Write-Host ""
         Write-Host "Options:" -ForegroundColor Yellow
         Write-Host "  -DebugMode, -D          Enable debug output" -ForegroundColor White
@@ -30,6 +32,7 @@ function yeet {
         Write-Host "  -Update, -u             Update existing PR from current branch changes" -ForegroundColor White
         Write-Host "  -New, -n                With -Update, also refresh PR title/description" -ForegroundColor White
         Write-Host "  -Push, -p               Commit and push uncommitted changes with AI-generated commit message" -ForegroundColor White
+        Write-Host "  -Setup, -s              Configure OpenRouter API key" -ForegroundColor White
         Write-Host "  -Version, -v            Show current version" -ForegroundColor White
         Write-Host "  -Help, -h               Show this help message" -ForegroundColor White
         Write-Host ""
@@ -39,6 +42,7 @@ function yeet {
         Write-Host "  With -Update: commits and pushes uncommitted changes to the open PR branch." -ForegroundColor White
         Write-Host "  With -Update -New: also regenerates and updates open PR title/body." -ForegroundColor White
         Write-Host "  With -Push: generates commit message and pushes directly without creating a PR." -ForegroundColor White
+        Write-Host "  With -Setup: configure OpenRouter API key for AI features." -ForegroundColor White
         Write-Host ""
         return
     }
@@ -62,6 +66,72 @@ function yeet {
         }
     }
 
+    function Invoke-Setup {
+        Write-Host ""
+        Write-Host "=== OpenRouter API Key Setup ===" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "OpenRouter is required for AI-generated commit messages and PR descriptions." -ForegroundColor White
+        Write-Host "You can get an API key from: https://openrouter.ai/keys" -ForegroundColor White
+        Write-Host ""
+        
+        $apiKey = Read-Host -Prompt "Enter your OpenRouter API key" -AsSecureString
+        
+        if (-not $apiKey -or $apiKey.Length -eq 0) {
+            Write-Host ""
+            Write-Error "No API key provided. Setup cancelled."
+            return
+        }
+        
+        # Convert secure string to plain text for validation
+        $BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($apiKey)
+        $plainApiKey = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
+        [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($BSTR)
+        
+        if ([string]::IsNullOrWhiteSpace($plainApiKey)) {
+            Write-Host ""
+            Write-Error "No API key provided. Setup cancelled."
+            return
+        }
+        
+        # Set environment variable for current session
+        $env:OPENROUTER_API_KEY = $plainApiKey
+        
+        # Save to PowerShell profile for persistence
+        $profilePath = "$env:USERPROFILE\Documents\PowerShell\Microsoft.PowerShell_profile.ps1"
+        $profileDir = Split-Path -Parent $profilePath
+        
+        if (-not (Test-Path $profileDir)) {
+            New-Item -ItemType Directory -Path $profileDir -Force | Out-Null
+        }
+        
+        if (-not (Test-Path $profilePath)) {
+            New-Item -ItemType File -Path $profilePath -Force | Out-Null
+        }
+        
+        # Check if OPENROUTER_API_KEY already exists in profile
+        $profileContent = Get-Content -Path $profilePath -Raw -ErrorAction SilentlyContinue
+        if ($profileContent -match '^\s*\$env:OPENROUTER_API_KEY\s*=') {
+            # Update existing line
+            $profileContent = $profileContent -replace '^\s*\$env:OPENROUTER_API_KEY\s*=.*$', "`$env:OPENROUTER_API_KEY = '$plainApiKey'"
+            Set-Content -Path $profilePath -Value $profileContent -NoNewline
+        } else {
+            # Append new line
+            Add-Content -Path $profilePath -Value "`n`$env:OPENROUTER_API_KEY = '$plainApiKey'"
+        }
+        
+        Write-Host ""
+        Write-Host "API key configured successfully!" -ForegroundColor Green
+        Write-Host "The key has been saved to your PowerShell profile." -ForegroundColor Green
+        Write-Host "You can now use yeet with AI-powered features." -ForegroundColor Green
+        Write-Host ""
+    }
+
+    # Handle explicit setup request
+    if ($Setup) {
+        Invoke-Setup
+        return
+    }
+
     $profilePath = "$env:USERPROFILE\Documents\PowerShell\Microsoft.PowerShell_profile.ps1"
     if (-not $env:OPENROUTER_API_KEY -and (Test-Path $profilePath)) {
         Debug-Log "Loading PowerShell profile from: $profilePath"
@@ -70,8 +140,22 @@ function yeet {
 
     $apiKey = $env:OPENROUTER_API_KEY
     if (-not $apiKey) {
-        Write-Error "OPENROUTER_API_KEY environment variable is not set"
-        return
+        # Check if this is a simple info request (version or help) - skip setup for these
+        if (-not $Version -and -not $Help) {
+            Write-Host "OPENROUTER_API_KEY environment variable is not set." -ForegroundColor Yellow
+            Write-Host ""
+            Invoke-Setup
+            
+            # Re-check if API key was set after setup
+            $apiKey = $env:OPENROUTER_API_KEY
+            if (-not $apiKey) {
+                Write-Error "Setup incomplete. Cannot proceed without OpenRouter API key."
+                return
+            }
+        } else {
+            # For -v or -h, just return without requiring API key
+            return
+        }
     }
     Debug-Log "OPENROUTER_API_KEY detected"
 

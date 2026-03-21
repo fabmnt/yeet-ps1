@@ -9,7 +9,9 @@ param(
     [switch]$Push,
     [switch]$Version,
     [Alias("h")]
-    [switch]$Help
+    [switch]$Help,
+    [Alias("s")]
+    [switch]$Setup
 )
 
 $scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -32,13 +34,15 @@ if (-not (Get-Command -Name yeet -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-$params = @{}
-if ($DebugMode) { $params['DebugMode'] = $true }
-if ($Merge) { $params['Merge'] = $true }
-if ($Update) { $params['Update'] = $true }
-if ($New) { $params['New'] = $true }
-if ($Push) { $params['Push'] = $true }
-if ($Version) { $params['Version'] = $true }
-if ($Help) { $params['Help'] = $true }
+$params = @{
+    DebugMode = $DebugMode.IsPresent
+    Merge = $Merge.IsPresent
+    Update = $Update.IsPresent
+    New = $New.IsPresent
+    Push = $Push.IsPresent
+    Version = $Version.IsPresent
+    Help = $Help.IsPresent
+    Setup = $Setup.IsPresent
+}
 
 yeet @params
