@@ -31,7 +31,7 @@ jobs:
           $manifest = Import-PowerShellDataFile -Path "./yeet/yeet.psd1"
           $version = $manifest.ModuleVersion
           Write-Host "Module version: $version"
-          "version=$version" >> $env:GITHUB_OUTPUT
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "version=$version"
 
       - name: Install Module Dependencies
         shell: pwsh
@@ -65,12 +65,10 @@ jobs:
           Write-Host "Successfully published yeet v$version to PowerShell Gallery!" -ForegroundColor Green
 
       - name: Create GitHub Release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ steps.get_version.outputs.version }}
-          release_name: Release v${{ steps.get_version.outputs.version }}
+          name: Release v${{ steps.get_version.outputs.version }}
           body: |
             Automated release of yeet v${{ steps.get_version.outputs.version }}
             
