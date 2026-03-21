@@ -8,6 +8,8 @@ function yeet {
         [switch]$Update,
         [Alias("n")]
         [switch]$New,
+        [Alias("p")]
+        [switch]$Push,
         [Alias("h")]
         [switch]$Help
     )
@@ -18,13 +20,14 @@ function yeet {
         Write-Host ""
         Write-Host "yeet - Git PR Creator CLI" -ForegroundColor Cyan
         Write-Host ""
-        Write-Host "Usage: yeet [-DebugMode] [-Merge] [-Update [-New]] [-Help]" -ForegroundColor White
+        Write-Host "Usage: yeet [-DebugMode] [-Merge] [-Update [-New]] [-Push] [-Help]" -ForegroundColor White
         Write-Host ""
         Write-Host "Options:" -ForegroundColor Yellow
         Write-Host "  -DebugMode, -D          Enable debug output" -ForegroundColor White
         Write-Host "  -Merge, -m              Merge an existing PR to base branch" -ForegroundColor White
         Write-Host "  -Update, -u             Update existing PR from current branch changes" -ForegroundColor White
         Write-Host "  -New, -n                With -Update, also refresh PR title/description" -ForegroundColor White
+        Write-Host "  -Push, -p               Commit and push uncommitted changes with AI-generated commit message" -ForegroundColor White
         Write-Host "  -Help, -h               Show this help message" -ForegroundColor White
         Write-Host ""
         Write-Host "Description:" -ForegroundColor Yellow
@@ -638,6 +641,85 @@ Rules:
             Write-Host "PR Description: (unchanged) $description" -ForegroundColor White
         }
         Write-Host "PR URL: $($prData.url)" -ForegroundColor Cyan
+        return
+    }
+
+    if ($Push) {
+        if ($Merge) {
+            Write-Error "-Merge and -Push cannot be used together"
+            return
+        }
+        if ($Update) {
+            Write-Error "-Update and -Push cannot be used together"
+            return
+        }
+
+        if (-not $hasUncommittedChanges) {
+            Write-Error "No uncommitted changes found. Nothing to commit and push."
+            return
+        }
+
+        $diff = git diff --staged
+        $unstagedDiff = git diff
+        $untrackedSections = Get-UntrackedFilePromptSections
+        Debug-Log "Staged diff length: $($diff.Length) characters"
+        Debug-Log "Unstaged diff length: $($unstagedDiff.Length) characters"
+        Debug-Log "Untracked file sections: $($untrackedSections.Count)"
+
+        $diffParts = @()
+        if ($diff) {
+            $diffParts += "=== Newly staged changes ===`n$diff"
+        }
+        if ($unstagedDiff) {
+            $diffParts += "=== Newly unstaged changes ===`n$unstagedDiff"
+        }
+        if ($untrackedSections.Count -gt 0) {
+            $diffParts += $untrackedSections
+        }
+
+        $combinedDiff = $diffParts -join "`n`n"
+        Debug-Log "Combined diff length: $($combinedDiff.Length) characters"
+
+        Write-Host "Generating commit message with AI..." -ForegroundColor Cyan
+        $aiResult = Invoke-AIRequest -Diff $combinedDiff -NeedsCommitMessage $true -NeedsPrDetails $false
+
+        $commitMessage = $aiResult.'commit-message'
+
+        if (-not $commitMessage) {
+            Write-Error "AI returned incomplete response"
+            return
+        }
+
+        Debug-Log "Commit message: $commitMessage"
+
+        Write-Host ""
+        Write-Host "=== Commit Preview ===" -ForegroundColor Cyan
+        Write-Host "Branch: $currentBranch" -ForegroundColor White
+        Write-Host "Commit: $commitMessage" -ForegroundColor White
+        Write-Host ""
+        Write-Host "Press ENTER to commit and push; ESCAPE to cancel..." -ForegroundColor Magenta
+        $key = $Host.UI.RawUI.ReadKey([System.Management.Automation.Host.ReadKeyOptions]::NoEcho -bor [System.Management.Automation.Host.ReadKeyOptions]::IncludeKeyDown)
+
+        if ($key.VirtualKeyCode -eq 27) {
+            Write-Host ""
+            Write-Host "Cancelled. No commit or push performed." -ForegroundColor Red
+            return
+        }
+
+        Write-Host ""
+        Write-Host "Committing changes..." -ForegroundColor Green
+        Debug-Log "Staging all changes for push"
+        git add .
+        Debug-Log "Creating commit with message: $commitMessage"
+        git commit -m $commitMessage
+
+        Write-Host "Pushing changes to remote..." -ForegroundColor Green
+        Debug-Log "Pushing '$currentBranch' to origin"
+        git push origin $currentBranch
+
+        Write-Host ""
+        Write-Host "Push complete!" -ForegroundColor Green
+        Write-Host "Commit Message: $commitMessage" -ForegroundColor White
         return
     }
 
