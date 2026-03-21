@@ -1,5 +1,7 @@
 # yeet
 
+> Deja de gastar tokens de tus agentes de codigo principales (Codex, Claude Code) solo para crear mensajes de commit, titulos y descripciones de PRs. **yeet** te permite usar modelos gratuitos de OpenRouter para lograr esto sin problemas.
+
 `yeet` es un asistente CLI orientado a Windows para trabajar con pull requests de GitHub.
 
 Utiliza:
@@ -14,10 +16,32 @@ El punto de entrada del comando es `yeet.cmd`, que invoca `yeet.ps1`.
 - PowerShell
 - `git` instalado y disponible en `PATH`
 - `gh` instalado y autenticado (`gh auth login`)
-- Variable de entorno `OPENROUTER_API_KEY` configurada
+- Variable de entorno `OPENROUTER_API_KEY` configurada (ver [Configuracion](#configuracion) mas abajo)
 
 Opcional:
 - `OPENROUTER_MODEL_ID` (o `OPENROUTER_MODEL`) para sobrescribir el modelo por defecto
+
+## Configuracion
+
+### Clave API de OpenRouter
+
+1. Obtén tu clave API gratuita en [OpenRouter](https://openrouter.ai/keys)
+2. Configura la variable de entorno `OPENROUTER_API_KEY`:
+
+   **PowerShell (sesion actual):**
+   ```powershell
+   $env:OPENROUTER_API_KEY = "sk-or-v1-..."
+   ```
+
+   **PowerShell (permanente):**
+   ```powershell
+   [Environment]::SetEnvironmentVariable("OPENROUTER_API_KEY", "sk-or-v1-...", "User")
+   ```
+
+   **Simbolo del sistema de Windows:**
+   ```cmd
+   setx OPENROUTER_API_KEY "sk-or-v1-..."
+   ```
 
 ## Instalacion
 
