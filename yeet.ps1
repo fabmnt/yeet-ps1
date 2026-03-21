@@ -6,6 +6,7 @@ param(
     [switch]$Update,
     [Alias("n")]
     [switch]$New,
+    [Alias("p")]
     [switch]$Push,
     [switch]$Version,
     [Alias("h")]
