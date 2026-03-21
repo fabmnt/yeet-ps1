@@ -35,14 +35,14 @@ if (-not (Get-Command -Name yeet -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-if ($Merge) { yeet -Merge } 
-elseif ($Update) { 
-    if ($New) { yeet -Update -New } 
-    else { yeet -Update }
-}
-elseif ($Push) { yeet -Push }
-elseif ($Version) { yeet -Version }
-elseif ($Help) { yeet -Help }
-elseif ($Setup) { yeet -Setup }
-elseif ($DebugMode) { yeet -DebugMode }
-else { yeet }
+$params = @{}
+if ($DebugMode) { $params.DebugMode = $true }
+if ($Merge) { $params.Merge = $true }
+if ($Update) { $params.Update = $true }
+if ($New) { $params.New = $true }
+if ($Push) { $params.Push = $true }
+if ($Version) { $params.Version = $true }
+if ($Help) { $params.Help = $true }
+if ($Setup) { $params.Setup = $true }
+
+yeet @params

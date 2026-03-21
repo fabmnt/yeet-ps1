@@ -110,9 +110,9 @@ function yeet {
         
         # Check if OPENROUTER_API_KEY already exists in profile
         $profileContent = Get-Content -Path $profilePath -Raw -ErrorAction SilentlyContinue
-        if ($profileContent -match '^\s*\$env:OPENROUTER_API_KEY\s*=') {
+        if ($profileContent -match '(?m)^\s*\$env:OPENROUTER_API_KEY\s*=') {
             # Update existing line
-            $profileContent = $profileContent -replace '^\s*\$env:OPENROUTER_API_KEY\s*=.*$', "`$env:OPENROUTER_API_KEY = '$plainApiKey'"
+            $profileContent = $profileContent -replace '(?m)^\s*\$env:OPENROUTER_API_KEY\s*=.*$', "`$env:OPENROUTER_API_KEY = '$plainApiKey'"
             Set-Content -Path $profilePath -Value $profileContent -NoNewline
         } else {
             # Append new line
