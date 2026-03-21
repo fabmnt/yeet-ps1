@@ -33,7 +33,7 @@ Add `Import-Module yeet` to your PowerShell profile to auto-load.
 ## Usage
 
 ```powershell
-yeet [-DebugMode] [-Merge] [-Update [-New]] [-Help]
+yeet [-DebugMode] [-Merge] [-Update [-New]] [-Push] [-Help]
 ```
 
 ## CLI Arguments
@@ -57,6 +57,11 @@ yeet [-DebugMode] [-Merge] [-Update [-New]] [-Help]
 - `-New`, `-n`
   - Only valid with `-Update`.
   - Also regenerates and updates PR title/body (not just commit + push).
+
+- `-Push`
+  - Generates a commit message from current changes and pushes directly without creating a PR.
+  - Shows the generated commit message and waits for confirmation.
+  - Cannot be combined with `-Merge` or `-Update`.
 
 ## Behavior (by mode)
 
@@ -87,6 +92,14 @@ yeet [-DebugMode] [-Merge] [-Update [-New]] [-Help]
 - Performs `gh pr merge --squash --delete-branch`.
 - Checks out the PR base branch and pulls latest from origin.
 
+### Push mode (`yeet -p`)
+
+- Requires uncommitted changes.
+- Uses AI to generate a commit message from current changes.
+- Shows a preview and waits for confirmation.
+- Commits all changes and pushes directly to the current branch without creating a PR.
+- Cannot be combined with `-Merge` or `-Update`.
+
 ## Examples
 
 ```powershell
@@ -101,6 +114,9 @@ yeet -u -n
 
 # Merge current branch PR
 yeet -m
+
+# Generate commit message and push directly (no PR)
+yeet -Push
 
 # Show help
 yeet -h
