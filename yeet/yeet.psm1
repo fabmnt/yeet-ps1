@@ -35,6 +35,7 @@ function yeet {
         Write-Host "  With -Merge: merges the current branch PR and updates local base branch." -ForegroundColor White
         Write-Host "  With -Update: commits and pushes uncommitted changes to the open PR branch." -ForegroundColor White
         Write-Host "  With -Update -New: also regenerates and updates open PR title/body." -ForegroundColor White
+        Write-Host "  With -Push: generates commit message and pushes directly without creating a PR." -ForegroundColor White
         Write-Host ""
         return
     }
@@ -697,7 +698,7 @@ Rules:
         Write-Host "Branch: $currentBranch" -ForegroundColor White
         Write-Host "Commit: $commitMessage" -ForegroundColor White
         Write-Host ""
-        Write-Host "Press ENTER to commit and push; ESCAPE to cancel..." -ForegroundColor Magenta
+        Write-Host "Press any key to commit and push (ESCAPE to cancel)..." -ForegroundColor Magenta
         $key = $Host.UI.RawUI.ReadKey([System.Management.Automation.Host.ReadKeyOptions]::NoEcho -bor [System.Management.Automation.Host.ReadKeyOptions]::IncludeKeyDown)
 
         if ($key.VirtualKeyCode -eq 27) {
@@ -712,10 +713,18 @@ Rules:
         git add .
         Debug-Log "Creating commit with message: $commitMessage"
         git commit -m $commitMessage
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Git commit failed. Aborting push."
+            return
+        }
 
         Write-Host "Pushing changes to remote..." -ForegroundColor Green
         Debug-Log "Pushing '$currentBranch' to origin"
         git push origin $currentBranch
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Git push failed."
+            return
+        }
 
         Write-Host ""
         Write-Host "Push complete!" -ForegroundColor Green

@@ -19,7 +19,17 @@ if (-not (Test-Path $modulePath)) {
     exit 1
 }
 
-Import-Module $modulePath -Force
+try {
+    Import-Module $modulePath -Force -ErrorAction Stop
+} catch {
+    Write-Error "Failed to import module from path '$modulePath'. $_"
+    exit 1
+}
+
+if (-not (Get-Command -Name yeet -ErrorAction SilentlyContinue)) {
+    Write-Error "The 'yeet' command was not found after importing module '$modulePath'."
+    exit 1
+}
 
 $params = @{}
 if ($DebugMode) { $params['DebugMode'] = $true }
