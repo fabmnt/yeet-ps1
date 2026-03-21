@@ -1,0 +1,76 @@
+name: Publish to PowerShell Gallery
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'yeet/**'
+      - '.github/workflows/publish.yml'
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup PowerShell
+        shell: pwsh
+        run: |
+          $PSVersionTable.PSVersion
+
+      - name: Get Module Version
+        id: get_version
+        shell: pwsh
+        run: |
+          $manifest = Import-PowerShellDataFile -Path "./yeet/yeet.psd1"
+          $version = $manifest.ModuleVersion
+          Write-Host "Module version: $version"
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Install Module Dependencies
+        shell: pwsh
+        run: |
+          Install-Module -Name PowerShellGet -Force -SkipPublisherCheck -AllowClobber
+
+      - name: Publish to PowerShell Gallery
+        shell: pwsh
+        env:
+          PSGALLERY_API_KEY: ${{ secrets.PSGALLERY_API_KEY }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          
+          $version = "${{ steps.get_version.outputs.version }}"
+          Write-Host "Publishing yeet version $version to PowerShell Gallery..." -ForegroundColor Cyan
+          
+          # Check if version already exists
+          try {
+            $existingModule = Find-Module -Name yeet -RequiredVersion $version -ErrorAction SilentlyContinue
+            if ($existingModule) {
+              Write-Host "Version $version already exists on PowerShell Gallery. Skipping publish." -ForegroundColor Yellow
+              exit 0
+            }
+          } catch {
+            # Module doesn't exist yet, continue with publish
+          }
+          
+          # Publish the module
+          Publish-Module -Path ./yeet -NuGetApiKey $env:PSGALLERY_API_KEY -Verbose
+          
+          Write-Host "Successfully published yeet v$version to PowerShell Gallery!" -ForegroundColor Green
+
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ steps.get_version.outputs.version }}
+          release_name: Release v${{ steps.get_version.outputs.version }}
+          body: |
+            Automated release of yeet v${{ steps.get_version.outputs.version }}
+            
+            Published to PowerShell Gallery
+          draft: false
+          prerelease: false
