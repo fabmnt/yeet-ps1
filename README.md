@@ -70,16 +70,63 @@ Import-Module yeet
 
 Add `Import-Module yeet` to your PowerShell profile to auto-load.
 
+## Initial Setup
+
+After installation, you need to configure your OpenRouter API key. You can do this in two ways:
+
+### Option 1: Interactive Setup (Recommended)
+
+Run the setup command and enter your API key when prompted:
+
+```powershell
+yeet -Setup
+```
+
+Or use the short form:
+
+```powershell
+yeet -s
+```
+
+The setup will:
+- Prompt you for your OpenRouter API key (input is hidden for security)
+- Save the key to your PowerShell profile for persistence across sessions
+- Set the key for the current session immediately
+
+### Option 2: Manual Configuration
+
+If you prefer to set the environment variable manually:
+
+**PowerShell (current session):**
+```powershell
+$env:OPENROUTER_API_KEY = "sk-or-v1-..."
+```
+
+**PowerShell (permanent):**
+```powershell
+[Environment]::SetEnvironmentVariable("OPENROUTER_API_KEY", "sk-or-v1-...", "User")
+```
+
+**Windows Command Prompt:**
+```cmd
+setx OPENROUTER_API_KEY "sk-or-v1-..."
+```
+
+**Note:** If you run `yeet` without an API key configured (except for `-v` or `-h`), it will automatically enter setup mode and prompt you for the key.
+
 ## Usage
 
 ```powershell
-yeet [-DebugMode] [-Merge] [-Update [-New]] [-Push] [-Version] [-Help]
+yeet [-DebugMode] [-Merge] [-Update [-New]] [-Push] [-Setup] [-Version] [-Help]
 ```
 
 ## CLI Arguments
 
 - `-Help`, `-h`
   - Shows help and exits.
+
+- `-Setup`, `-s`
+  - Enters interactive setup mode to configure OpenRouter API key.
 
 - `-DebugMode`, `-D`
   - Enables debug logging output.
@@ -146,6 +193,9 @@ yeet [-DebugMode] [-Merge] [-Update [-New]] [-Push] [-Version] [-Help]
 ## Examples
 
 ```powershell
+# Initial setup (configure OpenRouter API key)
+yeet -s
+
 # Create a PR from local changes
 yeet
 

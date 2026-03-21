@@ -70,16 +70,63 @@ Import-Module yeet
 
 Agrega `Import-Module yeet` a tu perfil de PowerShell para carga automatica.
 
+## Configuracion Inicial
+
+Despues de la instalacion, necesitas configurar tu clave API de OpenRouter. Puedes hacerlo de dos formas:
+
+### Opcion 1: Configuracion Interactiva (Recomendado)
+
+Ejecuta el comando de configuracion e introduce tu clave API cuando se te solicite:
+
+```powershell
+yeet -Setup
+```
+
+O usa la forma abreviada:
+
+```powershell
+yeet -s
+```
+
+La configuracion:
+- Te solicitara tu clave API de OpenRouter (la entrada esta oculta por seguridad)
+- Guardara la clave en tu perfil de PowerShell para persistencia entre sesiones
+- Configurara la clave para la sesion actual inmediatamente
+
+### Opcion 2: Configuracion Manual
+
+Si prefieres configurar la variable de entorno manualmente:
+
+**PowerShell (sesion actual):**
+```powershell
+$env:OPENROUTER_API_KEY = "sk-or-v1-..."
+```
+
+**PowerShell (permanente):**
+```powershell
+[Environment]::SetEnvironmentVariable("OPENROUTER_API_KEY", "sk-or-v1-...", "User")
+```
+
+**Simbolo del sistema de Windows:**
+```cmd
+setx OPENROUTER_API_KEY "sk-or-v1-..."
+```
+
+**Nota:** Si ejecutas `yeet` sin una clave API configurada (excepto para `-v` o `-h`), automaticamente entrara en modo de configuracion y te solicitara la clave.
+
 ## Uso
 
 ```powershell
-yeet [-DebugMode] [-Merge] [-Update [-New]] [-Push] [-Version] [-Help]
+yeet [-DebugMode] [-Merge] [-Update [-New]] [-Push] [-Setup] [-Version] [-Help]
 ```
 
 ## Argumentos CLI
 
 - `-Help`, `-h`
   - Muestra la ayuda y sale.
+
+- `-Setup`, `-s`
+  - Entra en modo de configuracion interactiva para configurar la clave API de OpenRouter.
 
 - `-DebugMode`, `-D`
   - Habilita el registro de depuracion.
@@ -146,6 +193,9 @@ yeet [-DebugMode] [-Merge] [-Update [-New]] [-Push] [-Version] [-Help]
 ## Ejemplos
 
 ```powershell
+# Configuracion inicial (configurar clave API de OpenRouter)
+yeet -s
+
 # Crear un PR a partir de cambios locales
 yeet
 
