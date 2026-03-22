@@ -1249,6 +1249,15 @@ Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
             Write-Error "Git checkout failed. Aborting PR creation."
             return
         }
+
+        if ($currentBranch -eq $defaultBranch) {
+            Write-Host "Resetting $currentBranch to origin/$currentBranch..." -ForegroundColor Green
+            Debug-Log "Resetting local default branch to match origin to avoid divergence"
+            git branch -f $currentBranch origin/$currentBranch
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warning "Failed to reset $currentBranch to origin/$currentBranch. Local branch may be diverged."
+            }
+        }
     }
 
     Write-Host "Pushing branch to remote..." -ForegroundColor Green
