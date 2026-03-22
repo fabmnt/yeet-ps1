@@ -1140,7 +1140,8 @@ Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
         Write-Host "No uncommitted changes." -ForegroundColor Yellow
         Write-Host "Current branch: $currentBranch" -ForegroundColor Cyan
 
-        $unpushedCommits = git log "origin/$defaultBranch..$currentBranch" --oneline 2>$null
+        $unpushedRange = if ($currentBranch -eq $defaultBranch) { "origin/$defaultBranch..$currentBranch" } else { "$defaultBranch..$currentBranch" }
+        $unpushedCommits = git log $unpushedRange --oneline 2>$null
         $hasUnpushedCommits = $unpushedCommits -ne $null -and $unpushedCommits.Length -gt 0
         Debug-Log "Has unpushed commits: $hasUnpushedCommits"
 
@@ -1189,10 +1190,10 @@ Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
         }
 
         $commitMessage = git log -1 --format="%s"
-        $branchName = Get-GeneratedBranchName -Title $title
+        $branchName = if ($currentBranch -eq $defaultBranch) { Get-GeneratedBranchName -Title $title } else { $currentBranch }
         Debug-Log "PR title: $title"
         Debug-Log "PR description: $description"
-        Debug-Log "Generated branch name: $branchName"
+        Debug-Log "Branch name: $branchName"
     }
 
     Write-Host ""
