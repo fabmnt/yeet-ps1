@@ -320,9 +320,29 @@ Return your response using this exact format:
 $formatInstructions
 
 Rules:
-- COMMIT: One line in conventional commits format (max 72 chars), no quotes, no markdown
-- TITLE: Brief PR title (40-72 chars), no quotes, no markdown
-- DESCRIPTION: Markdown with sections ## Summary, ## Changes (bullet list), ## Notes
+- COMMIT: One line in conventional commits format: type(scope): description. Types: feat, fix, docs, style, refactor, test, chore. Max 72 chars. No quotes, no markdown.
+- TITLE: Brief PR title (40-72 chars), action-oriented starting with verb (Add, Fix, Update, Refactor), no period at end, no quotes, no markdown.
+- DESCRIPTION: Markdown with sections:
+  - ## Summary (1-2 sentences explaining WHY, not just WHAT)
+  - ## Changes (bullet list, max 5 high-level items; for large diffs, summarize at category level)
+  - ## Notes (optional, only if important context needed)
+  Max 300 words. Professional tone. No "This PR..." filler. Use English only.
+- Edge cases: If diff is only formatting/linting: type=style, brief description. If only lockfile/deps: mention in description.
+
+Example output:
+COMMIT: feat(auth): add OAuth2 login with Google provider
+TITLE: Add OAuth2 Google authentication
+DESCRIPTION:
+## Summary
+Implements OAuth2 authentication flow using Google as the identity provider to enable single sign-on.
+
+## Changes
+- Add Google OAuth2 client configuration
+- Create login callback handler
+- Store user tokens securely in session
+
+## Notes
+Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
 
 When updating an existing PR, make granular edits that preserve the current intent unless the new changes require adjustment.
 "@
@@ -334,9 +354,29 @@ Return your response using this exact format:
 $formatInstructions
 
 Rules:
-- COMMIT: One line in conventional commits format (max 72 chars), no quotes, no markdown
-- TITLE: Brief PR title (40-72 chars), no quotes, no markdown
-- DESCRIPTION: Markdown with sections ## Summary, ## Changes (bullet list), ## Notes
+- COMMIT: One line in conventional commits format: type(scope): description. Types: feat, fix, docs, style, refactor, test, chore. Max 72 chars. No quotes, no markdown.
+- TITLE: Brief PR title (40-72 chars), action-oriented starting with verb (Add, Fix, Update, Refactor), no period at end, no quotes, no markdown.
+- DESCRIPTION: Markdown with sections:
+  - ## Summary (1-2 sentences explaining WHY, not just WHAT)
+  - ## Changes (bullet list, max 5 high-level items; for large diffs, summarize at category level)
+  - ## Notes (optional, only if important context needed)
+  Max 300 words. Professional tone. No "This PR..." filler. Use English only.
+- Edge cases: If diff is only formatting/linting: type=style, brief description. If only lockfile/deps: mention in description.
+
+Example output:
+COMMIT: feat(auth): add OAuth2 login with Google provider
+TITLE: Add OAuth2 Google authentication
+DESCRIPTION:
+## Summary
+Implements OAuth2 authentication flow using Google as the identity provider to enable single sign-on.
+
+## Changes
+- Add Google OAuth2 client configuration
+- Create login callback handler
+- Store user tokens securely in session
+
+## Notes
+Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
 "@
         }
 
@@ -350,7 +390,7 @@ Rules:
 
         $lastErrorMessage = ""
         $attempts = 0
-        $maxTokens = if ($NeedsPrDetails) { 1400 } else { 150 }
+        $maxTokens = if ($NeedsPrDetails) { 3000 } else { 300 }
 
         for ($attempt = 1; $attempt -le 3; $attempt++) {
             $attempts = $attempt
