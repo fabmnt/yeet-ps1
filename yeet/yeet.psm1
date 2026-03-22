@@ -1163,12 +1163,13 @@ Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
             return
         }
 
-        $commitRange = "$defaultBranch..$currentBranch"
+        $commitRange = if ($currentBranch -eq $defaultBranch) { "origin/$defaultBranch..$currentBranch" } else { "$defaultBranch..$currentBranch" }
         Debug-Log "Getting diff for range: $commitRange"
         $combinedDiff = git log $commitRange --oneline -1 --format="" -p
         if (-not $combinedDiff) {
             Debug-Log "No diff from log, trying git diff"
-            $combinedDiff = git diff $defaultBranch..$currentBranch
+            $diffRange = if ($currentBranch -eq $defaultBranch) { "origin/$defaultBranch..$currentBranch" } else { "$defaultBranch..$currentBranch" }
+            $combinedDiff = git diff $diffRange
         }
         Debug-Log "Combined diff length: $($combinedDiff.Length) characters"
         if (-not $combinedDiff) {
