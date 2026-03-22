@@ -411,6 +411,7 @@ Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
                         )
                         max_tokens = $maxTokens
                         reasoning = @{ enabled = $false }
+                        plugins = @(@{ id = "context-compression" })
                     } | ConvertTo-Json -Depth 10 -Compress)
             } -ArgumentList $apiKey, $model, $systemPrompt, $requestInput, $maxTokens
 

@@ -1,6 +1,6 @@
 @{
     RootModule = 'yeet.psm1'
-    ModuleVersion = '1.4.0'
+    ModuleVersion = '1.4.1'
     GUID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
     Author = 'Fabian Montoya'
     CompanyName = ''
@@ -18,7 +18,7 @@
             Tags = @('git', 'github', 'pr', 'pull-request', 'ai', 'openrouter', 'commit')
             ProjectUri = 'https://github.com/fabmnt/yeet-ps1'
             LicenseUri = 'https://github.com/fabmnt/yeet-ps1/blob/main/LICENSE'
-            ReleaseNotes = 'v1.4.0 - Improved AI prompts with better guidelines and examples, increased max tokens to 3000 for PR generation'
+            ReleaseNotes = 'v1.4.1 - Added OpenRouter context-compression plugin to handle large diffs'
         }
     }
 }
