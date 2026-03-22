@@ -64,7 +64,7 @@ Find available models at [openrouter.ai/models](https://openrouter.ai/models).
 Install from [PowerShell Gallery](https://www.powershellgallery.com/packages/yeet):
 
 ```powershell
-Install-Module -Name yeet -Scope CurrentUser
+Install-Module -Name yeet -Scope CurrentUser -Force
 Import-Module yeet
 ```
 
