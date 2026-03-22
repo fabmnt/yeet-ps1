@@ -1,4 +1,5 @@
 param(
+    [Alias("D")]
     [switch]$DebugMode,
     [Alias("m")]
     [switch]$Merge,

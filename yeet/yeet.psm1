@@ -1,6 +1,7 @@
 function yeet {
     [CmdletBinding()]
     param(
+        [Alias("D")]
         [switch]$DebugMode,
         [Alias("m")]
         [switch]$Merge,
@@ -66,7 +67,25 @@ function yeet {
         }
     }
 
+    function Test-CanPrompt {
+        if (-not [Environment]::UserInteractive) {
+            return $false
+        }
+
+        try {
+            $null = $Host.UI.RawUI
+            return $true
+        } catch {
+            return $false
+        }
+    }
+
     function Invoke-Setup {
+        if (-not (Test-CanPrompt)) {
+            Write-Error "Setup requires an interactive PowerShell session. Set OPENROUTER_API_KEY manually for non-interactive environments."
+            return
+        }
+
         Write-Host ""
         Write-Host "=== OpenRouter API Key Setup ===" -ForegroundColor Cyan
         Write-Host ""
@@ -98,16 +117,7 @@ function yeet {
         
         # Save to PowerShell profile for persistence
         $profilePath = $PROFILE.CurrentUserAllHosts
-        $profileDir = Split-Path -Parent $profilePath
-        
-        if (-not (Test-Path $profileDir)) {
-            New-Item -ItemType Directory -Path $profileDir -Force | Out-Null
-        }
-        
-        if (-not (Test-Path $profilePath)) {
-            New-Item -ItemType File -Path $profilePath -Force | Out-Null
-        }
-        
+
         Write-Host ""
         Write-Host "Current session configured successfully." -ForegroundColor Green
         Write-Host "Profile path: $profilePath" -ForegroundColor DarkGray
@@ -120,6 +130,15 @@ function yeet {
             return
         }
 
+        $profileDir = Split-Path -Parent $profilePath
+        if (-not (Test-Path $profileDir)) {
+            New-Item -ItemType Directory -Path $profileDir -Force | Out-Null
+        }
+
+        if (-not (Test-Path $profilePath)) {
+            New-Item -ItemType File -Path $profilePath -Force | Out-Null
+        }
+
         $escapedApiKey = $plainApiKey -replace "'", "''"
 
         # Check if OPENROUTER_API_KEY already exists in profile
@@ -130,7 +149,7 @@ function yeet {
             Set-Content -Path $profilePath -Value $profileContent
         } else {
             # Append new line
-            Add-Content -Path $profilePath -Value "`n`$env:OPENROUTER_API_KEY = '$escapedApiKey'"
+            Add-Content -Path $profilePath -Value "$([Environment]::NewLine)`$env:OPENROUTER_API_KEY = '$escapedApiKey'"
         }
         
         Write-Host ""
@@ -146,10 +165,18 @@ function yeet {
         return
     }
 
-    $profilePath = $PROFILE.CurrentUserAllHosts
-    if (-not $env:OPENROUTER_API_KEY -and (Test-Path $profilePath)) {
-        Debug-Log "Loading PowerShell profile from: $profilePath"
-        . $profilePath
+    $profilePaths = @($PROFILE.CurrentUserAllHosts, $PROFILE.CurrentUserCurrentHost) | Where-Object { $_ } | Select-Object -Unique
+    if (-not $env:OPENROUTER_API_KEY) {
+        foreach ($profilePath in $profilePaths) {
+            if (Test-Path $profilePath) {
+                Debug-Log "Loading PowerShell profile from: $profilePath"
+                . $profilePath
+
+                if ($env:OPENROUTER_API_KEY) {
+                    break
+                }
+            }
+        }
     }
 
     $apiKey = $env:OPENROUTER_API_KEY
@@ -157,6 +184,12 @@ function yeet {
         # Check if this is a simple info request (version or help) - skip setup for these
         if (-not $Version -and -not $Help) {
             Write-Host "OPENROUTER_API_KEY environment variable is not set." -ForegroundColor Yellow
+
+            if (-not (Test-CanPrompt)) {
+                Write-Error "Non-interactive session detected. Set OPENROUTER_API_KEY manually (or run 'yeet -Setup' in an interactive shell)."
+                return
+            }
+
             Write-Host ""
             Invoke-Setup
             
