@@ -1,4 +1,5 @@
 param(
+    [Alias("D")]
     [switch]$DebugMode,
     [Alias("m")]
     [switch]$Merge,
@@ -6,10 +7,14 @@ param(
     [switch]$Update,
     [Alias("n")]
     [switch]$New,
+    [Alias("p")]
     [switch]$Push,
+    [Alias("v")]
     [switch]$Version,
     [Alias("h")]
-    [switch]$Help
+    [switch]$Help,
+    [Alias("s")]
+    [switch]$Setup
 )
 
 $scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -33,12 +38,13 @@ if (-not (Get-Command -Name yeet -ErrorAction SilentlyContinue)) {
 }
 
 $params = @{}
-if ($DebugMode) { $params['DebugMode'] = $true }
-if ($Merge) { $params['Merge'] = $true }
-if ($Update) { $params['Update'] = $true }
-if ($New) { $params['New'] = $true }
-if ($Push) { $params['Push'] = $true }
-if ($Version) { $params['Version'] = $true }
-if ($Help) { $params['Help'] = $true }
+if ($DebugMode) { $params.DebugMode = $true }
+if ($Merge) { $params.Merge = $true }
+if ($Update) { $params.Update = $true }
+if ($New) { $params.New = $true }
+if ($Push) { $params.Push = $true }
+if ($Version) { $params.Version = $true }
+if ($Help) { $params.Help = $true }
+if ($Setup) { $params.Setup = $true }
 
 yeet @params
