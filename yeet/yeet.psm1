@@ -830,6 +830,10 @@ Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
             Write-Host "Updating PR #$prNumber..." -ForegroundColor Green
             Debug-Log "Editing PR #$prNumber title/body"
             gh pr edit $prNumber --title $title --body $description
+            if ($LASTEXITCODE -ne 0) {
+                Write-Error "GitHub PR edit failed."
+                return
+            }
         } else {
             Debug-Log "Skipping PR title/description update (use -New with -Update to enable)"
         }
@@ -918,6 +922,10 @@ Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
         Write-Host "Committing changes..." -ForegroundColor Green
         Debug-Log "Staging all changes for push"
         git add .
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Git add failed. Aborting push."
+            return
+        }
         Debug-Log "Creating commit with message: $commitMessage"
         git commit -m $commitMessage
         if ($LASTEXITCODE -ne 0) {
@@ -1058,6 +1066,10 @@ Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
         Write-Host "Creating branch: $branchName" -ForegroundColor Green
         Debug-Log "Creating and switching to branch '$branchName'"
         git checkout -b $branchName
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Git checkout failed. Aborting PR creation."
+            return
+        }
 
         Write-Host "Committing changes..." -ForegroundColor Green
         Debug-Log "Staging all changes for initial PR commit"
@@ -1087,6 +1099,10 @@ Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
         --title $title `
         --body $description `
         --base $defaultBranch
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "GitHub PR creation failed."
+        return
+    }
 
     Write-Host ""
     Write-Host "PR created successfully!" -ForegroundColor Green
