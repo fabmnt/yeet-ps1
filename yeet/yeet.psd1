@@ -1,6 +1,6 @@
 @{
     RootModule = 'yeet.psm1'
-    ModuleVersion = '1.5.0'
+    ModuleVersion = '1.5.1'
     GUID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
     Author = 'Fabian Montoya'
     CompanyName = ''
@@ -18,7 +18,7 @@
             Tags = @('git', 'github', 'pr', 'pull-request', 'ai', 'openrouter', 'commit')
             ProjectUri = 'https://github.com/fabmnt/yeet-ps1'
             LicenseUri = 'https://github.com/fabmnt/yeet-ps1/blob/main/LICENSE'
-            ReleaseNotes = 'v1.5.0 - Added exit code checks for all git commands to prevent continuing after failures'
+            ReleaseNotes = 'v1.5.1 - Added missing exit code checks for gh pr edit/create and git checkout -b'
         }
     }
 }
