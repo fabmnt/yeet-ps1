@@ -84,7 +84,7 @@ function yeet {
         
         # Convert secure string to plain text for validation
         $BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($apiKey)
-        $plainApiKey = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
+        $plainApiKey = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($BSTR)
         [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($BSTR)
         
         if ([string]::IsNullOrWhiteSpace($plainApiKey)) {
@@ -97,7 +97,7 @@ function yeet {
         $env:OPENROUTER_API_KEY = $plainApiKey
         
         # Save to PowerShell profile for persistence
-        $profilePath = "$env:USERPROFILE\Documents\PowerShell\Microsoft.PowerShell_profile.ps1"
+        $profilePath = $PROFILE.CurrentUserAllHosts
         $profileDir = Split-Path -Parent $profilePath
         
         if (-not (Test-Path $profileDir)) {
@@ -108,15 +108,29 @@ function yeet {
             New-Item -ItemType File -Path $profilePath -Force | Out-Null
         }
         
+        Write-Host ""
+        Write-Host "Current session configured successfully." -ForegroundColor Green
+        Write-Host "Profile path: $profilePath" -ForegroundColor DarkGray
+        Write-Host ""
+        Write-Host "Save API key to your PowerShell profile for future sessions? (Y/N, default: Y)" -ForegroundColor Yellow
+        $persistChoice = Read-Host
+        if (-not [string]::IsNullOrWhiteSpace($persistChoice) -and $persistChoice.Trim().ToUpper() -eq "N") {
+            Write-Host "Skipped profile save. Key is available in current session only." -ForegroundColor Yellow
+            Write-Host ""
+            return
+        }
+
+        $escapedApiKey = $plainApiKey -replace "'", "''"
+
         # Check if OPENROUTER_API_KEY already exists in profile
         $profileContent = Get-Content -Path $profilePath -Raw -ErrorAction SilentlyContinue
         if ($profileContent -match '(?m)^\s*\$env:OPENROUTER_API_KEY\s*=') {
             # Update existing line
-            $profileContent = $profileContent -replace '(?m)^\s*\$env:OPENROUTER_API_KEY\s*=.*$', "`$env:OPENROUTER_API_KEY = '$plainApiKey'"
-            Set-Content -Path $profilePath -Value $profileContent -NoNewline
+            $profileContent = $profileContent -replace '(?m)^\s*\$env:OPENROUTER_API_KEY\s*=.*$', "`$env:OPENROUTER_API_KEY = '$escapedApiKey'"
+            Set-Content -Path $profilePath -Value $profileContent
         } else {
             # Append new line
-            Add-Content -Path $profilePath -Value "`n`$env:OPENROUTER_API_KEY = '$plainApiKey'"
+            Add-Content -Path $profilePath -Value "`n`$env:OPENROUTER_API_KEY = '$escapedApiKey'"
         }
         
         Write-Host ""
@@ -132,7 +146,7 @@ function yeet {
         return
     }
 
-    $profilePath = "$env:USERPROFILE\Documents\PowerShell\Microsoft.PowerShell_profile.ps1"
+    $profilePath = $PROFILE.CurrentUserAllHosts
     if (-not $env:OPENROUTER_API_KEY -and (Test-Path $profilePath)) {
         Debug-Log "Loading PowerShell profile from: $profilePath"
         . $profilePath

@@ -8,6 +8,7 @@ param(
     [switch]$New,
     [Alias("p")]
     [switch]$Push,
+    [Alias("v")]
     [switch]$Version,
     [Alias("h")]
     [switch]$Help,

@@ -16,7 +16,7 @@ El punto de entrada del comando es `yeet.cmd`, que invoca `yeet.ps1`.
 - PowerShell
 - `git` instalado y disponible en `PATH`
 - `gh` instalado y autenticado (`gh auth login`)
-- Variable de entorno `OPENROUTER_API_KEY` configurada (ver [Configuración](#configuracion) más abajo)
+- Variable de entorno `OPENROUTER_API_KEY` configurada (ver [Configuración](#configuración) más abajo)
 
 Opcional:
 - `OPENROUTER_MODEL_ID` (o `OPENROUTER_MODEL`) para sobrescribir el modelo por defecto
@@ -76,7 +76,7 @@ Después de la instalación, necesitas configurar tu clave API de OpenRouter. Pu
 
 ### Opción 1: Configuración Interactiva (Recomendado)
 
-Ejecuta el comando de configuracion e introduce tu clave API cuando se te solicite:
+Ejecuta el comando de configuración e introduce tu clave API cuando se te solicite:
 
 ```powershell
 yeet -Setup
@@ -147,11 +147,11 @@ yeet [-DebugMode] [-Merge] [-Update [-New]] [-Push] [-Setup] [-Version] [-Help]
 
 - `-Push`
   - Genera un mensaje de commit a partir de los cambios actuales y hace push directamente sin crear un PR.
-  - Muestra el mensaje de commit generado y espera confirmacion.
+  - Muestra el mensaje de commit generado y espera confirmación.
   - No se puede combinar con `-Merge` o `-Update`.
 
 - `-Version`, `-v`
-  - Muestra la version actual de yeet.
+  - Muestra la versión actual de yeet.
 
 ## Comportamiento (por modo)
 
@@ -160,7 +160,7 @@ yeet [-DebugMode] [-Merge] [-Update [-New]] [-Push] [-Setup] [-Version] [-Help]
 - Si tienes cambios sin commit:
   - Genera mensaje de commit + título/cuerpo del PR a partir del diff.
   - Muestra una vista previa y espera confirmación.
-  - Crea una rama a partir del titulo generado, hace commit, push, y abre un PR.
+  - Crea una rama a partir del título generado, hace commit, push, y abre un PR.
 
 - Si no tienes cambios sin commit:
   - Si estás en la rama por defecto: sale con error.
@@ -186,14 +186,14 @@ yeet [-DebugMode] [-Merge] [-Update [-New]] [-Push] [-Setup] [-Version] [-Help]
 
 - Requiere cambios sin commit.
 - Usa IA para generar un mensaje de commit a partir de los cambios actuales.
-- Muestra una vista previa y espera confirmacion.
+- Muestra una vista previa y espera confirmación.
 - Hace commit de todos los cambios y push directamente a la rama actual sin crear un PR.
 - No se puede combinar con `-Merge` o `-Update`.
 
 ## Ejemplos
 
 ```powershell
-# Configuracion inicial (configurar clave API de OpenRouter)
+# Configuración inicial (configurar clave API de OpenRouter)
 yeet -s
 
 # Crear un PR a partir de cambios locales
