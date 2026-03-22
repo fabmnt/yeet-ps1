@@ -597,7 +597,7 @@ Rules:
     if ($Merge) {
         if ($hasUncommittedChanges) {
             $status = git status --porcelain
-            Write-Error "Cannot merge with uncommitted changes:`n$($status -join [Environment]::NewLine)"
+            Write-Error "Cannot merge with uncommitted changes:`n$(@($status) -join [Environment]::NewLine)"
             return
         }
 
