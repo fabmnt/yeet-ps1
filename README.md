@@ -165,7 +165,7 @@ yeet [-DebugMode] [-Merge] [-Update [-New]] [-Push] [-Setup] [-Version] [-Help]
 - If you have no uncommitted changes:
   - If on default branch: exits with error.
   - If on feature branch and PR exists: prints PR info and exits.
-  - If on feature branch without open PR: generates PR title/body from branch diff, then creates PR.
+  - If on feature branch without open PR: prints unpushed commits that will be used, generates PR title/body from branch diff, then creates PR.
 
 ### Update mode (`yeet -u`)
 
@@ -174,6 +174,7 @@ yeet [-DebugMode] [-Merge] [-Update [-New]] [-Push] [-Setup] [-Version] [-Help]
   - current branch is not default branch
   - existing open PR for current branch
 - Commits and pushes changes to the PR branch.
+- If unpushed commits already exist, prints them before confirmation.
 - With `-n`, also updates PR title/body.
 
 ### Merge mode (`yeet -m`)
@@ -188,6 +189,7 @@ yeet [-DebugMode] [-Merge] [-Update [-New]] [-Push] [-Setup] [-Version] [-Help]
 - Uses AI to generate a commit message from current changes.
 - Shows a preview and waits for confirmation.
 - Commits all changes and pushes directly to the current branch without creating a PR.
+- If unpushed commits already exist, prints them before confirmation.
 - Cannot be combined with `-Merge` or `-Update`.
 
 ## Examples

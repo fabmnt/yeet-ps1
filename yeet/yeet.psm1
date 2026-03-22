@@ -652,6 +652,24 @@ Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
         return @(git log "origin/$DefaultBranch..HEAD" --oneline 2>$null)
     }
 
+    function Show-UnpushedCommitsPreview {
+        param(
+            [string[]]$Commits,
+            [string]$Header = "Unpushed commits that will be used:"
+        )
+
+        $commitList = @($Commits | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        if (-not $commitList -or $commitList.Count -eq 0) {
+            return
+        }
+
+        Write-Host $Header -ForegroundColor Yellow
+        foreach ($commit in $commitList) {
+            Write-Host "  - $commit" -ForegroundColor White
+        }
+        Write-Host ""
+    }
+
     if ($New -and -not $Update) {
         Write-Error "-New can only be used together with -Update"
         return
@@ -724,6 +742,10 @@ Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
         $unpushedCommits = Get-UnpushedCommits -CurrentBranch $currentBranch -DefaultBranch $defaultBranch
         $hasUnpushedCommits = $unpushedCommits -ne $null -and $unpushedCommits.Length -gt 0
         Debug-Log "Has unpushed commits: $hasUnpushedCommits"
+
+        if ($hasUnpushedCommits) {
+            Show-UnpushedCommitsPreview -Commits $unpushedCommits -Header "Unpushed commits detected for this PR update:"
+        }
 
         if (-not $hasUncommittedChanges -and -not $hasUnpushedCommits) {
             Write-Error "No uncommitted changes and no unpushed commits found. Nothing to update."
@@ -984,6 +1006,10 @@ Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
         $hasUnpushedCommits = $unpushedCommits -ne $null -and $unpushedCommits.Length -gt 0
         Debug-Log "Has unpushed commits: $hasUnpushedCommits"
 
+        if ($hasUnpushedCommits) {
+            Show-UnpushedCommitsPreview -Commits $unpushedCommits -Header "Unpushed commits detected for this push:"
+        }
+
         if (-not $hasUncommittedChanges -and -not $hasUnpushedCommits) {
             Write-Error "No uncommitted changes and no unpushed commits found. Nothing to commit and push."
             return
@@ -1163,6 +1189,8 @@ Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
             Write-Error "No uncommitted changes and no unpushed commits found. Nothing to do."
             return
         }
+
+        Show-UnpushedCommitsPreview -Commits $unpushedCommits -Header "Unpushed commits that will be used to create the PR:"
 
         $commitRange = if ($currentBranch -eq $defaultBranch) { "origin/$defaultBranch..$currentBranch" } else { "$defaultBranch..$currentBranch" }
         Debug-Log "Getting diff for range: $commitRange"
