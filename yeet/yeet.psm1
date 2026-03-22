@@ -1140,7 +1140,11 @@ Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
         Write-Host "No uncommitted changes." -ForegroundColor Yellow
         Write-Host "Current branch: $currentBranch" -ForegroundColor Cyan
 
-        if ($currentBranch -eq $defaultBranch) {
+        $unpushedCommits = git log "origin/$defaultBranch..$currentBranch" --oneline 2>$null
+        $hasUnpushedCommits = $unpushedCommits -ne $null -and $unpushedCommits.Length -gt 0
+        Debug-Log "Has unpushed commits: $hasUnpushedCommits"
+
+        if ($currentBranch -eq $defaultBranch -and -not $hasUnpushedCommits) {
             Write-Error "On default branch ($defaultBranch) with no changes. Nothing to do."
             return
         }
@@ -1151,6 +1155,11 @@ Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
             $prData = $openPr | ConvertFrom-Json
             Write-Host "An open PR already exists for this branch: #$($prData.number)" -ForegroundColor Yellow
             Write-Host "PR URL: $($prData.url)" -ForegroundColor Cyan
+            return
+        }
+
+        if (-not $hasUnpushedCommits) {
+            Write-Error "No uncommitted changes and no unpushed commits found. Nothing to do."
             return
         }
 
@@ -1179,9 +1188,10 @@ Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
         }
 
         $commitMessage = git log -1 --format="%s"
-        $branchName = $currentBranch
+        $branchName = Get-GeneratedBranchName -Title $title
         Debug-Log "PR title: $title"
         Debug-Log "PR description: $description"
+        Debug-Log "Generated branch name: $branchName"
     }
 
     Write-Host ""
@@ -1227,6 +1237,14 @@ Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
         git commit -m $commitMessage
         if ($LASTEXITCODE -ne 0) {
             Write-Error "Git commit failed. Aborting PR creation."
+            return
+        }
+    } elseif ($branchName -ne $currentBranch) {
+        Write-Host "Creating branch: $branchName" -ForegroundColor Green
+        Debug-Log "Creating and switching to branch '$branchName'"
+        git checkout -b $branchName
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Git checkout failed. Aborting PR creation."
             return
         }
     }
