@@ -153,10 +153,10 @@ function yeet {
             # Update existing line
             $regexSafeApiKey = $escapedApiKey -replace '\$', '$$$$'
             $profileContent = $profileContent -replace '(?m)^\s*\$env:OPENROUTER_API_KEY\s*=.*$', "`$env:OPENROUTER_API_KEY = '$regexSafeApiKey'"
-            Set-Content -Path $profilePath -Value $profileContent
+            Set-Content -Path $profilePath -Value $profileContent -Encoding utf8
         } else {
             # Append new line
-            Add-Content -Path $profilePath -Value "$([Environment]::NewLine)`$env:OPENROUTER_API_KEY = '$escapedApiKey'"
+            Add-Content -Path $profilePath -Value "$([Environment]::NewLine)`$env:OPENROUTER_API_KEY = '$escapedApiKey'" -Encoding utf8
         }
         
         Write-Host ""
