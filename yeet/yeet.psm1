@@ -151,7 +151,8 @@ function yeet {
         $profileContent = Get-Content -Path $profilePath -Raw -ErrorAction SilentlyContinue
         if ($profileContent -match '(?m)^\s*\$env:OPENROUTER_API_KEY\s*=') {
             # Update existing line
-            $profileContent = $profileContent -replace '(?m)^\s*\$env:OPENROUTER_API_KEY\s*=.*$', "`$env:OPENROUTER_API_KEY = '$escapedApiKey'"
+            $regexSafeApiKey = $escapedApiKey -replace '\$', '$$$$'
+            $profileContent = $profileContent -replace '(?m)^\s*\$env:OPENROUTER_API_KEY\s*=.*$', "`$env:OPENROUTER_API_KEY = '$regexSafeApiKey'"
             Set-Content -Path $profilePath -Value $profileContent
         } else {
             # Append new line
