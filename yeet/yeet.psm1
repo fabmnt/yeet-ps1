@@ -102,9 +102,15 @@ function yeet {
         }
         
         # Convert secure string to plain text for validation
-        $BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($apiKey)
-        $plainApiKey = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($BSTR)
-        [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($BSTR)
+        $BSTR = [IntPtr]::Zero
+        try {
+            $BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($apiKey)
+            $plainApiKey = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($BSTR)
+        } finally {
+            if ($BSTR -ne [IntPtr]::Zero) {
+                [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($BSTR)
+            }
+        }
         
         if ([string]::IsNullOrWhiteSpace($plainApiKey)) {
             Write-Host ""
@@ -122,7 +128,7 @@ function yeet {
         Write-Host "Current session configured successfully." -ForegroundColor Green
         Write-Host "Profile path: $profilePath" -ForegroundColor DarkGray
         Write-Host ""
-        Write-Host "Save API key to your PowerShell profile for future sessions? (Y/N, default: Y)" -ForegroundColor Yellow
+        Write-Host "Save API key to your PowerShell profile for future sessions? This stores it as plain text. (Y/N, default: Y)" -ForegroundColor Yellow
         $persistChoice = Read-Host
         if (-not [string]::IsNullOrWhiteSpace($persistChoice) -and $persistChoice.Trim().ToUpper() -eq "N") {
             Write-Host "Skipped profile save. Key is available in current session only." -ForegroundColor Yellow
@@ -181,26 +187,20 @@ function yeet {
 
     $apiKey = $env:OPENROUTER_API_KEY
     if (-not $apiKey) {
-        # Check if this is a simple info request (version or help) - skip setup for these
-        if (-not $Version -and -not $Help) {
-            Write-Host "OPENROUTER_API_KEY environment variable is not set." -ForegroundColor Yellow
+        Write-Host "OPENROUTER_API_KEY environment variable is not set." -ForegroundColor Yellow
 
-            if (-not (Test-CanPrompt)) {
-                Write-Error "Non-interactive session detected. Set OPENROUTER_API_KEY manually (or run 'yeet -Setup' in an interactive shell)."
-                return
-            }
+        if (-not (Test-CanPrompt)) {
+            Write-Error "Non-interactive session detected. Set OPENROUTER_API_KEY manually (or run 'yeet -Setup' in an interactive shell)."
+            return
+        }
 
-            Write-Host ""
-            Invoke-Setup
-            
-            # Re-check if API key was set after setup
-            $apiKey = $env:OPENROUTER_API_KEY
-            if (-not $apiKey) {
-                Write-Error "Setup incomplete. Cannot proceed without OpenRouter API key."
-                return
-            }
-        } else {
-            # For -v or -h, just return without requiring API key
+        Write-Host ""
+        Invoke-Setup
+        
+        # Re-check if API key was set after setup
+        $apiKey = $env:OPENROUTER_API_KEY
+        if (-not $apiKey) {
+            Write-Error "Setup incomplete. Cannot proceed without OpenRouter API key."
             return
         }
     }
