@@ -670,11 +670,23 @@ Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
         Write-Host "Merging PR #$prNumber..." -ForegroundColor Green
         Debug-Log "Running merge command for PR #$prNumber"
         gh pr merge $prNumber --squash --delete-branch
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "GitHub PR merge failed. Aborting."
+            return
+        }
 
         Write-Host "Switching to $prBase and pulling latest..." -ForegroundColor Green
         Debug-Log "Checking out '$prBase' and pulling latest from origin"
         git checkout $prBase
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Git checkout failed. Please manually switch to '$prBase' and pull."
+            return
+        }
         git pull origin $prBase
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Git pull failed. Please manually pull the latest changes."
+            return
+        }
 
         Write-Host ""
         Write-Host "Merge complete!" -ForegroundColor Green
@@ -795,12 +807,24 @@ Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
         Write-Host "Committing changes..." -ForegroundColor Green
         Debug-Log "Staging all changes for update"
         git add .
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Git add failed. Aborting update."
+            return
+        }
         Debug-Log "Creating commit with message: $commitMessage"
         git commit -m $commitMessage
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Git commit failed. Aborting update."
+            return
+        }
 
         Write-Host "Pushing changes to remote branch..." -ForegroundColor Green
         Debug-Log "Pushing '$currentBranch' to origin"
         git push origin $currentBranch
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Git push failed. Aborting update."
+            return
+        }
 
         if ($New) {
             Write-Host "Updating PR #$prNumber..." -ForegroundColor Green
@@ -1038,13 +1062,25 @@ Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
         Write-Host "Committing changes..." -ForegroundColor Green
         Debug-Log "Staging all changes for initial PR commit"
         git add .
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Git add failed. Aborting PR creation."
+            return
+        }
         Debug-Log "Creating commit with message: $commitMessage"
         git commit -m $commitMessage
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Git commit failed. Aborting PR creation."
+            return
+        }
     }
 
     Write-Host "Pushing branch to remote..." -ForegroundColor Green
     Debug-Log "Pushing '$branchName' with upstream to origin"
     git push -u origin $branchName
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Git push failed. Aborting PR creation."
+        return
+    }
 
     Debug-Log "Creating PR on base '$defaultBranch'"
     $prUrl = gh pr create `
