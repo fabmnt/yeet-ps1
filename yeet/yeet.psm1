@@ -630,6 +630,28 @@ Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
     }
     Debug-Log "Default branch: $defaultBranch"
 
+    function Get-UnpushedCommits {
+        param(
+            [string]$CurrentBranch,
+            [string]$DefaultBranch
+        )
+
+        $upstreamRef = git rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2>$null
+        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($upstreamRef)) {
+            Debug-Log "Using upstream '$upstreamRef' to detect unpushed commits"
+            return @(git log "@{u}..HEAD" --oneline 2>$null)
+        }
+
+        Debug-Log "No upstream configured for '$CurrentBranch'; checking origin/$CurrentBranch"
+        git show-ref --verify --quiet "refs/remotes/origin/$CurrentBranch"
+        if ($LASTEXITCODE -eq 0) {
+            return @(git log "origin/$CurrentBranch..HEAD" --oneline 2>$null)
+        }
+
+        Debug-Log "No remote branch found for '$CurrentBranch'; falling back to origin/$DefaultBranch"
+        return @(git log "origin/$DefaultBranch..HEAD" --oneline 2>$null)
+    }
+
     if ($New -and -not $Update) {
         Write-Error "-New can only be used together with -Update"
         return
@@ -699,8 +721,12 @@ Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
             return
         }
 
-        if (-not $hasUncommittedChanges) {
-            Write-Error "No uncommitted changes found. Nothing to update."
+        $unpushedCommits = Get-UnpushedCommits -CurrentBranch $currentBranch -DefaultBranch $defaultBranch
+        $hasUnpushedCommits = $unpushedCommits -ne $null -and $unpushedCommits.Length -gt 0
+        Debug-Log "Has unpushed commits: $hasUnpushedCommits"
+
+        if (-not $hasUncommittedChanges -and -not $hasUnpushedCommits) {
+            Write-Error "No uncommitted changes and no unpushed commits found. Nothing to update."
             return
         }
 
@@ -722,6 +748,94 @@ Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
         $currentPrDescription = [string]$prData.body
         Debug-Log "Current PR title length: $($currentPrTitle.Length)"
         Debug-Log "Current PR description length: $($currentPrDescription.Length)"
+
+        if (-not $hasUncommittedChanges) {
+            Write-Host "No uncommitted changes, but found $($unpushedCommits.Count) unpushed commit(s)." -ForegroundColor Yellow
+            Write-Host ""
+            if ($New) {
+                Write-Host "Press ENTER to push existing commits and refresh PR details; ESCAPE to cancel..." -ForegroundColor Magenta
+            } else {
+                Write-Host "Press ENTER to push existing commits; ESCAPE to cancel..." -ForegroundColor Magenta
+            }
+            $key = $Host.UI.RawUI.ReadKey([System.Management.Automation.Host.ReadKeyOptions]::NoEcho -bor [System.Management.Automation.Host.ReadKeyOptions]::IncludeKeyDown)
+
+            if ($key.VirtualKeyCode -eq 27) {
+                Write-Host ""
+                Write-Host "Cancelled. No push performed." -ForegroundColor Red
+                return
+            }
+
+            Write-Host ""
+            Write-Host "Pushing changes to remote branch..." -ForegroundColor Green
+            Debug-Log "Pushing '$currentBranch' to origin"
+            git push origin $currentBranch
+            if ($LASTEXITCODE -ne 0) {
+                Write-Error "Git push failed. Aborting update."
+                return
+            }
+
+            Write-Host ""
+            if (-not $New) {
+                Write-Host "PR commit pushed successfully!" -ForegroundColor Green
+                Write-Host "PR URL: $($prData.url)" -ForegroundColor Cyan
+                return
+            }
+        }
+
+        if (-not $hasUncommittedChanges -and $New) {
+            $branchDiff = git diff "$defaultBranch...HEAD"
+            if (-not $branchDiff) {
+                $branchDiff = git log "$defaultBranch..HEAD" --oneline -1 --format="" -p
+            }
+
+            Debug-Log "Branch diff for PR metadata refresh length: $($branchDiff.Length) characters"
+            if (-not $branchDiff) {
+                Write-Error "No diff content found to refresh PR metadata."
+                return
+            }
+
+            Write-Host "Generating updated PR details with AI..." -ForegroundColor Cyan
+            $aiResult = Invoke-AIRequest -Diff $branchDiff -NeedsCommitMessage $false -NeedsPrDetails $true -CurrentPrTitle $currentPrTitle -CurrentPrDescription $currentPrDescription
+
+            $title = $aiResult.title
+            $description = $aiResult.description
+
+            if (-not $title) {
+                Write-Error "AI returned incomplete response"
+                return
+            }
+
+            Write-Host ""
+            Write-Host "=== PR Metadata Refresh Preview ===" -ForegroundColor Cyan
+            Write-Host "PR: #$prNumber ($($prData.url))" -ForegroundColor White
+            Write-Host "Branch: $currentBranch" -ForegroundColor White
+            Write-Host "PR Title: $title" -ForegroundColor Yellow
+            Write-Host "PR Description: $description" -ForegroundColor White
+            Write-Host ""
+            Write-Host "Press ENTER to update PR title/description; ESCAPE to cancel..." -ForegroundColor Magenta
+            $key = $Host.UI.RawUI.ReadKey([System.Management.Automation.Host.ReadKeyOptions]::NoEcho -bor [System.Management.Automation.Host.ReadKeyOptions]::IncludeKeyDown)
+
+            if ($key.VirtualKeyCode -eq 27) {
+                Write-Host ""
+                Write-Host "Cancelled. PR metadata not updated." -ForegroundColor Red
+                return
+            }
+
+            Write-Host "Updating PR #$prNumber..." -ForegroundColor Green
+            Debug-Log "Editing PR #$prNumber title/body"
+            gh pr edit $prNumber --title $title --body $description
+            if ($LASTEXITCODE -ne 0) {
+                Write-Error "GitHub PR edit failed."
+                return
+            }
+
+            Write-Host ""
+            Write-Host "PR updated successfully!" -ForegroundColor Green
+            Write-Host "Updated PR Title: $title" -ForegroundColor Yellow
+            Write-Host "Updated PR Description: $description" -ForegroundColor White
+            Write-Host "PR URL: $($prData.url)" -ForegroundColor Cyan
+            return
+        }
 
         Write-Host "Uncommitted changes detected:" -ForegroundColor Yellow
         git status --short
@@ -866,8 +980,39 @@ Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
             return
         }
 
+        $unpushedCommits = Get-UnpushedCommits -CurrentBranch $currentBranch -DefaultBranch $defaultBranch
+        $hasUnpushedCommits = $unpushedCommits -ne $null -and $unpushedCommits.Length -gt 0
+        Debug-Log "Has unpushed commits: $hasUnpushedCommits"
+
+        if (-not $hasUncommittedChanges -and -not $hasUnpushedCommits) {
+            Write-Error "No uncommitted changes and no unpushed commits found. Nothing to commit and push."
+            return
+        }
+
         if (-not $hasUncommittedChanges) {
-            Write-Error "No uncommitted changes found. Nothing to commit and push."
+            Write-Host "No uncommitted changes, but found $($unpushedCommits.Count) unpushed commit(s)." -ForegroundColor Yellow
+            Write-Host ""
+            Write-Host "Press any key to push existing commits (ESCAPE to cancel)..." -ForegroundColor Magenta
+            $key = $Host.UI.RawUI.ReadKey([System.Management.Automation.Host.ReadKeyOptions]::NoEcho -bor [System.Management.Automation.Host.ReadKeyOptions]::IncludeKeyDown)
+
+            if ($key.VirtualKeyCode -eq 27) {
+                Write-Host ""
+                Write-Host "Cancelled. No push performed." -ForegroundColor Red
+                return
+            }
+
+            Write-Host ""
+            Write-Host "Pushing changes to remote..." -ForegroundColor Green
+            Debug-Log "Pushing '$currentBranch' to origin"
+            git push origin $currentBranch
+            if ($LASTEXITCODE -ne 0) {
+                Write-Error "Git push failed."
+                return
+            }
+
+            Write-Host ""
+            Write-Host "Push complete!" -ForegroundColor Green
+            Write-Host "Pushed $($unpushedCommits.Count) existing commit(s)" -ForegroundColor White
             return
         }
 
@@ -995,7 +1140,12 @@ Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
         Write-Host "No uncommitted changes." -ForegroundColor Yellow
         Write-Host "Current branch: $currentBranch" -ForegroundColor Cyan
 
-        if ($currentBranch -eq $defaultBranch) {
+        $unpushedRange = if ($currentBranch -eq $defaultBranch) { "origin/$defaultBranch..$currentBranch" } else { "$defaultBranch..$currentBranch" }
+        $unpushedCommits = git log $unpushedRange --oneline 2>$null
+        $hasUnpushedCommits = $unpushedCommits -ne $null -and $unpushedCommits.Length -gt 0
+        Debug-Log "Has unpushed commits: $hasUnpushedCommits"
+
+        if ($currentBranch -eq $defaultBranch -and -not $hasUnpushedCommits) {
             Write-Error "On default branch ($defaultBranch) with no changes. Nothing to do."
             return
         }
@@ -1009,12 +1159,18 @@ Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
             return
         }
 
-        $commitRange = "$defaultBranch..$currentBranch"
+        if (-not $hasUnpushedCommits) {
+            Write-Error "No uncommitted changes and no unpushed commits found. Nothing to do."
+            return
+        }
+
+        $commitRange = if ($currentBranch -eq $defaultBranch) { "origin/$defaultBranch..$currentBranch" } else { "$defaultBranch..$currentBranch" }
         Debug-Log "Getting diff for range: $commitRange"
         $combinedDiff = git log $commitRange --oneline -1 --format="" -p
         if (-not $combinedDiff) {
             Debug-Log "No diff from log, trying git diff"
-            $combinedDiff = git diff $defaultBranch..$currentBranch
+            $diffRange = if ($currentBranch -eq $defaultBranch) { "origin/$defaultBranch..$currentBranch" } else { "$defaultBranch..$currentBranch" }
+            $combinedDiff = git diff $diffRange
         }
         Debug-Log "Combined diff length: $($combinedDiff.Length) characters"
         if (-not $combinedDiff) {
@@ -1034,9 +1190,10 @@ Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
         }
 
         $commitMessage = git log -1 --format="%s"
-        $branchName = $currentBranch
+        $branchName = if ($currentBranch -eq $defaultBranch) { Get-GeneratedBranchName -Title $title } else { $currentBranch }
         Debug-Log "PR title: $title"
         Debug-Log "PR description: $description"
+        Debug-Log "Branch name: $branchName"
     }
 
     Write-Host ""
@@ -1083,6 +1240,23 @@ Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
         if ($LASTEXITCODE -ne 0) {
             Write-Error "Git commit failed. Aborting PR creation."
             return
+        }
+    } elseif ($branchName -ne $currentBranch) {
+        Write-Host "Creating branch: $branchName" -ForegroundColor Green
+        Debug-Log "Creating and switching to branch '$branchName'"
+        git checkout -b $branchName
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Git checkout failed. Aborting PR creation."
+            return
+        }
+
+        if ($currentBranch -eq $defaultBranch) {
+            Write-Host "Resetting $currentBranch to origin/$currentBranch..." -ForegroundColor Green
+            Debug-Log "Resetting local default branch to match origin to avoid divergence"
+            git branch -f $currentBranch origin/$currentBranch
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warning "Failed to reset $currentBranch to origin/$currentBranch. Local branch may be diverged."
+            }
         }
     }
 
