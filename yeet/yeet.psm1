@@ -705,14 +705,16 @@ Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
 
         Write-Host ""
         Write-Host "Press ENTER to merge, or ESCAPE to cancel..." -ForegroundColor Magenta
-        do {
-            $key = $Host.UI.RawUI.ReadKey([System.Management.Automation.Host.ReadKeyOptions]::NoEcho -bor [System.Management.Automation.Host.ReadKeyOptions]::IncludeKeyDown)
-        } while ($key.VirtualKeyCode -ne 13 -and $key.VirtualKeyCode -ne 27)
+        if (-not $Yes) {
+            do {
+                $key = $Host.UI.RawUI.ReadKey([System.Management.Automation.Host.ReadKeyOptions]::NoEcho -bor [System.Management.Automation.Host.ReadKeyOptions]::IncludeKeyDown)
+            } while ($key.VirtualKeyCode -ne 13 -and $key.VirtualKeyCode -ne 27)
 
-        if ($key.VirtualKeyCode -eq 27) {
-            Write-Host ""
-            Write-Host "Cancelled. PR not merged." -ForegroundColor Red
-            return
+            if ($key.VirtualKeyCode -eq 27) {
+                Write-Host ""
+                Write-Host "Cancelled. PR not merged." -ForegroundColor Red
+                return
+            }
         }
 
         Write-Host ""
@@ -788,14 +790,16 @@ Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
             } else {
                 Write-Host "Press ENTER to push existing commits; ESCAPE to cancel..." -ForegroundColor Magenta
             }
-            do {
-                $key = $Host.UI.RawUI.ReadKey([System.Management.Automation.Host.ReadKeyOptions]::NoEcho -bor [System.Management.Automation.Host.ReadKeyOptions]::IncludeKeyDown)
-            } while ($key.VirtualKeyCode -ne 13 -and $key.VirtualKeyCode -ne 27)
+            if (-not $Yes) {
+                do {
+                    $key = $Host.UI.RawUI.ReadKey([System.Management.Automation.Host.ReadKeyOptions]::NoEcho -bor [System.Management.Automation.Host.ReadKeyOptions]::IncludeKeyDown)
+                } while ($key.VirtualKeyCode -ne 13 -and $key.VirtualKeyCode -ne 27)
 
-            if ($key.VirtualKeyCode -eq 27) {
-                Write-Host ""
-                Write-Host "Cancelled. No push performed." -ForegroundColor Red
-                return
+                if ($key.VirtualKeyCode -eq 27) {
+                    Write-Host ""
+                    Write-Host "Cancelled. No push performed." -ForegroundColor Red
+                    return
+                }
             }
 
             Write-Host ""
@@ -846,14 +850,16 @@ Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
             Write-Host "PR Description: $description" -ForegroundColor White
             Write-Host ""
             Write-Host "Press ENTER to update PR title/description; ESCAPE to cancel..." -ForegroundColor Magenta
-            do {
-                $key = $Host.UI.RawUI.ReadKey([System.Management.Automation.Host.ReadKeyOptions]::NoEcho -bor [System.Management.Automation.Host.ReadKeyOptions]::IncludeKeyDown)
-            } while ($key.VirtualKeyCode -ne 13 -and $key.VirtualKeyCode -ne 27)
+            if (-not $Yes) {
+                do {
+                    $key = $Host.UI.RawUI.ReadKey([System.Management.Automation.Host.ReadKeyOptions]::NoEcho -bor [System.Management.Automation.Host.ReadKeyOptions]::IncludeKeyDown)
+                } while ($key.VirtualKeyCode -ne 13 -and $key.VirtualKeyCode -ne 27)
 
-            if ($key.VirtualKeyCode -eq 27) {
-                Write-Host ""
-                Write-Host "Cancelled. PR metadata not updated." -ForegroundColor Red
-                return
+                if ($key.VirtualKeyCode -eq 27) {
+                    Write-Host ""
+                    Write-Host "Cancelled. PR metadata not updated." -ForegroundColor Red
+                    return
+                }
             }
 
             Write-Host "Updating PR #$prNumber..." -ForegroundColor Green
@@ -944,14 +950,16 @@ Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
         } else {
             Write-Host "Press ENTER to commit and push; ESCAPE to cancel..." -ForegroundColor Magenta
         }
-        do {
-            $key = $Host.UI.RawUI.ReadKey([System.Management.Automation.Host.ReadKeyOptions]::NoEcho -bor [System.Management.Automation.Host.ReadKeyOptions]::IncludeKeyDown)
-        } while ($key.VirtualKeyCode -ne 13 -and $key.VirtualKeyCode -ne 27)
+        if (-not $Yes) {
+            do {
+                $key = $Host.UI.RawUI.ReadKey([System.Management.Automation.Host.ReadKeyOptions]::NoEcho -bor [System.Management.Automation.Host.ReadKeyOptions]::IncludeKeyDown)
+            } while ($key.VirtualKeyCode -ne 13 -and $key.VirtualKeyCode -ne 27)
 
-        if ($key.VirtualKeyCode -eq 27) {
-            Write-Host ""
-            Write-Host "Cancelled. No commit, push, or PR update performed." -ForegroundColor Red
-            return
+            if ($key.VirtualKeyCode -eq 27) {
+                Write-Host ""
+                Write-Host "Cancelled. No commit, push, or PR update performed." -ForegroundColor Red
+                return
+            }
         }
 
         Write-Host ""
@@ -1034,14 +1042,16 @@ Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
             Write-Host "No uncommitted changes, but found $($unpushedCommits.Count) unpushed commit(s)." -ForegroundColor Yellow
             Write-Host ""
             Write-Host "Press ENTER to push existing commits (ESCAPE to cancel)..." -ForegroundColor Magenta
-            do {
-                $key = $Host.UI.RawUI.ReadKey([System.Management.Automation.Host.ReadKeyOptions]::NoEcho -bor [System.Management.Automation.Host.ReadKeyOptions]::IncludeKeyDown)
-            } while ($key.VirtualKeyCode -ne 13 -and $key.VirtualKeyCode -ne 27)
+            if (-not $Yes) {
+                do {
+                    $key = $Host.UI.RawUI.ReadKey([System.Management.Automation.Host.ReadKeyOptions]::NoEcho -bor [System.Management.Automation.Host.ReadKeyOptions]::IncludeKeyDown)
+                } while ($key.VirtualKeyCode -ne 13 -and $key.VirtualKeyCode -ne 27)
 
-            if ($key.VirtualKeyCode -eq 27) {
-                Write-Host ""
-                Write-Host "Cancelled. No push performed." -ForegroundColor Red
-                return
+                if ($key.VirtualKeyCode -eq 27) {
+                    Write-Host ""
+                    Write-Host "Cancelled. No push performed." -ForegroundColor Red
+                    return
+                }
             }
 
             Write-Host ""
@@ -1098,15 +1108,17 @@ Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
         Write-Host "Commit: $commitMessage" -ForegroundColor White
         Write-Host ""
             Write-Host "Press ENTER to commit and push (ESCAPE to cancel)..." -ForegroundColor Magenta
-            do {
-                $key = $Host.UI.RawUI.ReadKey([System.Management.Automation.Host.ReadKeyOptions]::NoEcho -bor [System.Management.Automation.Host.ReadKeyOptions]::IncludeKeyDown)
-            } while ($key.VirtualKeyCode -ne 13 -and $key.VirtualKeyCode -ne 27)
+            if (-not $Yes) {
+                do {
+                    $key = $Host.UI.RawUI.ReadKey([System.Management.Automation.Host.ReadKeyOptions]::NoEcho -bor [System.Management.Automation.Host.ReadKeyOptions]::IncludeKeyDown)
+                } while ($key.VirtualKeyCode -ne 13 -and $key.VirtualKeyCode -ne 27)
 
-            if ($key.VirtualKeyCode -eq 27) {
-            Write-Host ""
-            Write-Host "Cancelled. No commit or push performed." -ForegroundColor Red
-            return
-        }
+                if ($key.VirtualKeyCode -eq 27) {
+                    Write-Host ""
+                    Write-Host "Cancelled. No commit or push performed." -ForegroundColor Red
+                    return
+                }
+            }
 
         Write-Host ""
         Write-Host "Committing changes..." -ForegroundColor Green
@@ -1253,14 +1265,16 @@ Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
     Write-Host ""
 
     Write-Host "Press ENTER to create the PR, or ESCAPE to cancel..." -ForegroundColor Magenta
-    do {
-        $key = $Host.UI.RawUI.ReadKey([System.Management.Automation.Host.ReadKeyOptions]::NoEcho -bor [System.Management.Automation.Host.ReadKeyOptions]::IncludeKeyDown)
-    } while ($key.VirtualKeyCode -ne 13 -and $key.VirtualKeyCode -ne 27)
+    if (-not $Yes) {
+        do {
+            $key = $Host.UI.RawUI.ReadKey([System.Management.Automation.Host.ReadKeyOptions]::NoEcho -bor [System.Management.Automation.Host.ReadKeyOptions]::IncludeKeyDown)
+        } while ($key.VirtualKeyCode -ne 13 -and $key.VirtualKeyCode -ne 27)
 
-    if ($key.VirtualKeyCode -eq 27) {
-        Write-Host ""
-        Write-Host "Cancelled. PR not created." -ForegroundColor Red
-        return
+        if ($key.VirtualKeyCode -eq 27) {
+            Write-Host ""
+            Write-Host "Cancelled. PR not created." -ForegroundColor Red
+            return
+        }
     }
 
     Write-Host ""

@@ -18,7 +18,7 @@
             Tags = @('git', 'github', 'pr', 'pull-request', 'ai', 'openrouter', 'commit')
             ProjectUri = 'https://github.com/fabmnt/yeet-ps1'
             LicenseUri = 'https://github.com/fabmnt/yeet-ps1/blob/main/LICENSE'
-            ReleaseNotes = 'v1.6.1 - Show unpushed commit details before update, push, and PR creation flows'
+            ReleaseNotes = 'v1.6.2 - Add -Yes flag for non-interactive/CI environments; restrict key prompts to only Enter/Escape; increase commit message max tokens'
         }
     }
 }
