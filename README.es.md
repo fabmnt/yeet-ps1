@@ -117,7 +117,7 @@ setx OPENROUTER_API_KEY "sk-or-v1-..."
 ## Uso
 
 ```powershell
-yeet [-DebugMode] [-Merge] [-Update [-New]] [-Push] [-Setup] [-Version] [-Help]
+yeet [-DebugMode] [-Merge] [-Update [-New]] [-Push] [-Setup] [-Yes] [-Version] [-Help]
 ```
 
 ## Argumentos CLI
@@ -127,6 +127,9 @@ yeet [-DebugMode] [-Merge] [-Update [-New]] [-Push] [-Setup] [-Version] [-Help]
 
 - `-Setup`, `-s`
   - Entra en modo de configuración interactiva para configurar la clave API de OpenRouter.
+
+- `-Yes`, `-y`
+  - Auto-acepta todos los mensajes prompts (útil para entornos no interactivos o CI).
 
 - `-DebugMode`, `-D`
   - Habilita el registro de depuración.
