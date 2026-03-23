@@ -14,7 +14,9 @@ param(
     [Alias("h")]
     [switch]$Help,
     [Alias("s")]
-    [switch]$Setup
+    [switch]$Setup,
+    [Alias("y")]
+    [switch]$Yes
 )
 
 $scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -46,5 +48,6 @@ if ($Push) { $params.Push = $true }
 if ($Version) { $params.Version = $true }
 if ($Help) { $params.Help = $true }
 if ($Setup) { $params.Setup = $true }
+if ($Yes) { $params.Yes = $true }
 
 yeet @params
